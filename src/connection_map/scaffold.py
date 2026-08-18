@@ -327,6 +327,10 @@ uv run connection-map rollback-core --root <target-repository>
 
 対応言語は個別キーで選択できます。`mixed`で指定した言語を一つの結果へ統合し、`all`ですべての対応言語を解析できます。`web`、`c-family`、`shell`、`sql` は関連する言語をまとめて選択するプリセットです。Tree-sitter解析時は `analyzer/README.md` の依存追加手順を確認してください。解析後は `serve` でローカル表示し、ブラウザの表示言語フィルターで対象を切り替えます。
 
+## Git管理と機密情報
+
+`core/`、`backups/`、`snapshots/`、`web/`は生成物のためGit管理外です。`config.toml`、`analyzer/`、`layout/`は対象リポジトリ固有の設定・拡張・レイアウトとして管理できます。`layout/`と`manual-v1.json`には注釈や外部ノードを保存できるため、公開前に絶対パス、ユーザー名、内部構造、外部サービス名を確認してください。解析結果をGit管理する場合だけ、`.gitignore`を明示的に変更してください。
+
 ## Core文書の参照先
 
 - 導入・更新: `core/docs/installation.md`
@@ -366,6 +370,14 @@ MANUAL_TEMPLATE = """{
 SNAPSHOT_GITIGNORE = "*\n!.gitignore\n"
 
 LOCAL_MODE_GITIGNORE = "core/\nbackups/\nsnapshots/\nweb/\n"
+FORCE_REFRESHABLE_FILES = frozenset(
+    {
+        Path("snapshots/.gitignore"),
+        Path("web/.gitignore"),
+        Path("backups/.gitignore"),
+        Path("layout/.gitkeep"),
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -384,8 +396,18 @@ def _is_link_or_reparse_point(path: Path) -> bool:
     return stat.S_ISLNK(info.st_mode) or bool(getattr(info, "st_file_attributes", 0) & 0x400)
 
 
-def initialize_target(root: Path, install_dir: str = ".connection-map", *, force: bool = False) -> ScaffoldResult:
-    """Create the target-repository structure without overwriting by default."""
+def initialize_target(
+    root: Path,
+    install_dir: str = ".connection-map",
+    *,
+    force: bool = False,
+    force_all: bool = False,
+) -> ScaffoldResult:
+    """Create the scaffold, with an explicit boundary for destructive refreshes.
+
+    ``force`` refreshes only generated control files.  ``force_all`` is the
+    explicit destructive mode for replacing user-managed templates as well.
+    """
 
     target_root = root.resolve()
     if not target_root.is_dir():
@@ -439,9 +461,11 @@ def initialize_target(root: Path, install_dir: str = ".connection-map", *, force
             resolved_path.relative_to(base)
         except ValueError as exc:
             raise ValueError(f"scaffold path resolves outside install directory: {path}") from exc
-        if path.exists() and not force:
-            skipped.append(path)
-            continue
+        relative = path.relative_to(base)
+        if path.exists():
+            if not force or (not force_all and relative not in FORCE_REFRESHABLE_FILES):
+                skipped.append(path)
+                continue
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8", newline="\n")
         created.append(path)

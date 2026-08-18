@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
 
 from build_installers import _find_portable_runtime
 from fetch_python_runtime import _extract_tar_verified, _safe_member
+from third_party_notices import find_license_files, read_runtime_origin, write_runtime_origin
 
 
 def test_find_portable_runtime_keeps_posix_lib_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -82,3 +83,54 @@ def test_extract_tar_verified_preserves_runtime_tree_and_rejects_symlink(tmp_pat
 def test_safe_member_rejects_traversal() -> None:
     with pytest.raises(ValueError, match="unsafe"):
         _safe_member("../outside")
+
+
+def test_runtime_origin_records_provider_and_verified_license_files(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    (runtime / "LICENSE.txt").write_text("Python license\n", encoding="utf-8")
+    (runtime / "share" / "doc" / "python" / "copyright").parent.mkdir(parents=True)
+    (runtime / "share" / "doc" / "python" / "copyright").write_text("Copyright\n", encoding="utf-8")
+
+    license_files = find_license_files(runtime)
+    assert license_files == ("LICENSE.txt", "share/doc/python/copyright")
+    origin_path = runtime / "runtime-origin.json"
+    write_runtime_origin(
+        origin_path,
+        {
+            "format": "connection-analysis-runtime-origin",
+            "schema_version": "1.0",
+            "provider": "test-provider",
+            "provider_release": "test-release",
+            "python_version": "3.13.15",
+            "target": "linux-x86_64",
+            "source_url": "https://example.test/python.tar.gz",
+            "archive_filename": "python.tar.gz",
+            "archive_sha256": "a" * 64,
+            "license_files": list(license_files),
+        },
+    )
+
+    loaded = read_runtime_origin(origin_path)
+    assert loaded["provider"] == "test-provider"
+    assert loaded["license_files"] == list(license_files)
+
+
+def test_runtime_origin_rejects_unsafe_license_path(tmp_path: Path) -> None:
+    origin_path = tmp_path / "runtime-origin.json"
+    with pytest.raises(ValueError, match="unsafe path"):
+        write_runtime_origin(
+            origin_path,
+            {
+                "format": "connection-analysis-runtime-origin",
+                "schema_version": "1.0",
+                "provider": "test-provider",
+                "provider_release": None,
+                "python_version": "3.13.15",
+                "target": "windows-amd64",
+                "source_url": "https://example.test/python.zip",
+                "archive_filename": "python.zip",
+                "archive_sha256": "a" * 64,
+                "license_files": ["../outside.txt"],
+            },
+        )

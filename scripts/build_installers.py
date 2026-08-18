@@ -22,6 +22,15 @@ try:
 except ModuleNotFoundError:  # Executed directly as scripts/build_installers.py.
     from build_release_manifest import write_manifest
 
+try:
+    from scripts.third_party_notices import (
+        read_runtime_origin,
+        render_third_party_notices,
+        sha256_bytes,
+    )
+except ModuleNotFoundError:  # Executed directly as scripts/build_installers.py.
+    from third_party_notices import read_runtime_origin, render_third_party_notices, sha256_bytes
+
 
 PAYLOAD_MARKER = "__CONNECTION_MAP_PAYLOAD__"
 
@@ -205,6 +214,21 @@ def _find_portable_runtime(runtime: Path) -> tuple[Path, Path, str]:
 
 def _write_portable_runtime(archive: zipfile.ZipFile, runtime: Path) -> dict[str, object]:
     runtime_root, executable, version = _find_portable_runtime(runtime)
+    origin = read_runtime_origin(runtime_root / "runtime-origin.json")
+    if origin["python_version"] != version:
+        raise ValueError(
+            "portable Python runtime version does not match runtime-origin.json: "
+            f"{version} != {origin['python_version']}"
+        )
+    license_paths = tuple(origin["license_files"])
+    for relative in license_paths:
+        license_path = runtime_root.joinpath(*PurePosixPath(relative).parts)
+        try:
+            license_path.relative_to(runtime_root)
+        except ValueError as exc:
+            raise ValueError(f"portable runtime license path escapes the runtime root: {relative}") from exc
+        if license_path.is_symlink() or not license_path.is_file():
+            raise ValueError(f"portable runtime license file is missing or unsafe: {relative}")
     entries: list[str] = []
     total_bytes = 0
     for path in sorted(runtime_root.rglob("*")):
@@ -230,6 +254,12 @@ def _write_portable_runtime(archive: zipfile.ZipFile, runtime: Path) -> dict[str
         _write_zip_entry(archive, f"connection-map-portable/runtime/{relative}", content, mode=mode or 0o644)
         entries.append(relative)
         total_bytes += len(content)
+    license_digests: dict[str, str] = {}
+    for relative in license_paths:
+        license_path = runtime_root.joinpath(*PurePosixPath(relative).parts)
+        content = license_path.read_bytes()
+        _write_zip_entry(archive, f"connection-map-portable/licenses/runtime/{relative}", content)
+        license_digests[relative] = sha256_bytes(content)
     executable_relative = executable.relative_to(runtime_root).as_posix()
     metadata = {
         "format": "connection-analysis-portable-runtime",
@@ -238,6 +268,9 @@ def _write_portable_runtime(archive: zipfile.ZipFile, runtime: Path) -> dict[str
         "interpreter": executable_relative,
         "files": entries,
         "bytes": total_bytes,
+        "origin": origin,
+        "license_files": list(license_paths),
+        "license_sha256": license_digests,
     }
     _write_zip_entry(
         archive,
@@ -299,6 +332,8 @@ exec "$PYTHON_BIN" -m connection_map "$@"
         "Application source is under app/source and persistent workspace data "
         "is under data. Run launcher/connection-map.cmd on Windows or "
         "launcher/connection-map.sh on POSIX systems.\n\n"
+        "License information is available at LICENSE.txt and "
+        "THIRD_PARTY_NOTICES.md; original license texts are under licenses/.\n\n"
         f"{runtime_note}"
         "If runtime/ is absent, Python 3.11 or newer is required. Optional parser "
         "dependencies are installed in a source or local Python environment and "
@@ -308,6 +343,7 @@ exec "$PYTHON_BIN" -m connection_map "$@"
         "release while retaining data/. Do not mix runtime/ from different "
         "releases.\n"
     )
+    runtime_metadata: dict[str, object] | None = None
     with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         _write_zip_entry(
             archive,
@@ -319,7 +355,7 @@ exec "$PYTHON_BIN" -m connection_map "$@"
         _write_zip_entry(archive, f"{root_name}/launcher/connection-map.sh", posix_launcher, mode=0o755)
         _write_zip_entry(archive, f"{root_name}/README.txt", readme)
         if runtime_dir is not None:
-            _write_portable_runtime(archive, runtime_dir)
+            runtime_metadata = _write_portable_runtime(archive, runtime_dir)
         with tarfile.open(source_archive, mode="r:*") as tar:
             members = tar.getmembers()
             names = [_archive_member_parts(member.name) for member in members]
@@ -328,6 +364,7 @@ exec "$PYTHON_BIN" -m connection_map "$@"
             root = names[0][0]
             required = {
                 (root, "pyproject.toml"),
+                (root, "LICENSE"),
                 (root, "src", "connection_map", "__init__.py"),
                 (root, "src", "connection_map", "__main__.py"),
                 (root, "src", "connection_map", "cli.py"),
@@ -350,6 +387,7 @@ exec "$PYTHON_BIN" -m connection_map "$@"
                 raise ValueError("source archive project name must be 'connection-analysis-mapping'")
             if project.get("version") != version:
                 raise ValueError(f"source archive project version must be {version!r}")
+            project_license: bytes | None = None
             for member, parts in zip(members, names, strict=True):
                 if not (member.isdir() or member.isreg()):
                     raise ValueError(f"source archive contains unsupported entry: {member.name}")
@@ -359,7 +397,26 @@ exec "$PYTHON_BIN" -m connection_map "$@"
                 fileobj = tar.extractfile(member)
                 if fileobj is None:
                     raise ValueError(f"source archive member is unreadable: {member.name}")
-                _write_zip_entry(archive, f"{root_name}/app/source/{'/'.join(relative)}", fileobj.read())
+                content = fileobj.read()
+                if relative == ("LICENSE",):
+                    project_license = content
+                _write_zip_entry(archive, f"{root_name}/app/source/{'/'.join(relative)}", content)
+        if project_license is None:
+            raise ValueError("source archive project LICENSE is missing or unreadable")
+        _write_zip_entry(archive, f"{root_name}/LICENSE.txt", project_license)
+        _write_zip_entry(archive, f"{root_name}/licenses/ConnectionAnalysisMapping-MIT.txt", project_license)
+        runtime_origin = runtime_metadata.get("origin") if runtime_metadata is not None else None
+        runtime_license_paths = (
+            tuple(runtime_metadata["license_files"])
+            if runtime_metadata is not None
+            else ()
+        )
+        notices = render_third_party_notices(
+            version=version,
+            runtime_origin=runtime_origin if isinstance(runtime_origin, dict) else None,
+            runtime_license_paths=runtime_license_paths,
+        )
+        _write_zip_entry(archive, f"{root_name}/THIRD_PARTY_NOTICES.md", notices)
         _write_zip_entry(archive, f"{root_name}/app/README.txt", "Bundled source is under app/source. Keep this directory replaceable during updates.\n")
     return destination
 
