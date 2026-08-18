@@ -1,0 +1,593 @@
+{
+  "format": "connection-analysis-completeness",
+  "version": 1,
+  "cases": [
+    {
+      "name": "python-definitions-and-relations",
+      "language": "python",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["python/main.py"],
+      "checked_kinds": ["class", "function", "method"],
+      "checked_relations": ["calls", "contains", "inherits"],
+      "exact_relations": ["inherits"],
+      "expected_nodes": [
+        ["python/main.py", "class", "Base"],
+        ["python/main.py", "method", "Base.value"],
+        ["python/main.py", "class", "Service"],
+        ["python/main.py", "method", "Service.run"],
+        ["python/main.py", "method", "Service.async_run"],
+        ["python/main.py", "function", "start"]
+      ],
+      "expected_edges": [
+        ["contains", ["python/main.py", "class", "Base"], ["python/main.py", "method", "Base.value"]],
+        ["contains", ["python/main.py", "class", "Service"], ["python/main.py", "method", "Service.run"]],
+        ["contains", ["python/main.py", "class", "Service"], ["python/main.py", "method", "Service.async_run"]],
+        ["inherits", ["python/main.py", "class", "Service"], ["python/main.py", "class", "Base"]],
+        ["calls", ["python/main.py", "function", "start"], ["python/main.py", "class", "Service"]],
+        ["calls", ["python/main.py", "function", "start"], ["python/main.py", "method", "Service.run"]]
+      ]
+    },
+    {
+      "name": "html-elements",
+      "language": "html",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["web/index.html"],
+      "checked_kinds": ["element"],
+      "checked_relations": ["contains"],
+      "expected_nodes": [
+        ["web/index.html", "element", "web/index.html:element:1:html"],
+        ["web/index.html", "element", "web/index.html:element:2:body"],
+        ["web/index.html", "element", "web/index.html:element:3:button"]
+      ],
+      "expected_edges": [
+        ["contains", ["web/index.html", "element", "web/index.html:element:1:html"], ["web/index.html", "element", "web/index.html:element:2:body"]],
+        ["contains", ["web/index.html", "element", "web/index.html:element:2:body"], ["web/index.html", "element", "web/index.html:element:3:button"]]
+      ]
+    },
+    {
+      "name": "css-rules",
+      "language": "css",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["web/style.css"],
+      "checked_kinds": ["style_rule"],
+      "checked_relations": ["contains"],
+      "expected_nodes": [["web/style.css", "style_rule", "web/style.css:rule:1"]],
+      "expected_edges": [["contains", ["web/style.css", "module", "web/style.css"], ["web/style.css", "style_rule", "web/style.css:rule:1"]]]
+    },
+    {
+      "name": "javascript-definitions-and-calls",
+      "language": "javascript",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["web/app.js"],
+      "checked_kinds": ["class", "function", "method"],
+      "checked_relations": ["calls", "contains"],
+      "expected_nodes": [
+        ["web/app.js", "function", "helper"],
+        ["web/app.js", "function", "start"],
+        ["web/app.js", "class", "Widget"],
+        ["web/app.js", "method", "Widget.render"]
+      ],
+      "expected_edges": [
+        ["contains", ["web/app.js", "class", "Widget"], ["web/app.js", "method", "Widget.render"]],
+        ["calls", ["web/app.js", "function", "start"], ["web/app.js", "function", "helper"]],
+        ["calls", ["web/app.js", "method", "Widget.render"], ["web/app.js", "function", "helper"]]
+      ]
+    },
+    {
+      "name": "typescript-declarations",
+      "language": "typescript",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["web/app.ts"],
+      "checked_kinds": ["class", "function", "interface", "method", "type"],
+      "checked_relations": ["contains"],
+      "expected_nodes": [
+        ["web/app.ts", "interface", "Config"],
+        ["web/app.ts", "type", "Identifier"],
+        ["web/app.ts", "class", "Service"],
+        ["web/app.ts", "method", "Service.run"],
+        ["web/app.ts", "function", "boot"]
+      ],
+      "expected_edges": [["contains", ["web/app.ts", "class", "Service"], ["web/app.ts", "method", "Service.run"]]]
+    },
+    {
+      "name": "c-functions-and-call",
+      "language": "c",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["c/main.c"],
+      "checked_kinds": ["function"],
+      "checked_relations": ["calls", "contains"],
+      "exact_relations": ["calls"],
+      "expected_nodes": [["c/main.c", "function", "add"], ["c/main.c", "function", "main"]],
+      "expected_edges": [
+        ["contains", ["c/main.c", "module", "c/main.c"], ["c/main.c", "function", "add"]],
+        ["contains", ["c/main.c", "module", "c/main.c"], ["c/main.c", "function", "main"]],
+        ["calls", ["c/main.c", "function", "main"], ["c/main.c", "function", "add"]]
+      ]
+    },
+    {
+      "name": "cpp-types-inheritance-and-call",
+      "language": "cpp",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["cpp/main.cpp"],
+      "checked_kinds": ["class", "function", "method", "namespace"],
+      "checked_relations": ["calls", "contains", "inherits"],
+      "exact_relations": ["calls", "inherits"],
+      "expected_nodes": [
+        ["cpp/main.cpp", "namespace", "demo"],
+        ["cpp/main.cpp", "class", "demo::Base"],
+        ["cpp/main.cpp", "method", "demo::Base::value"],
+        ["cpp/main.cpp", "class", "demo::Derived"],
+        ["cpp/main.cpp", "method", "demo::Derived::run"],
+        ["cpp/main.cpp", "function", "demo::start"]
+      ],
+      "expected_edges": [
+        ["contains", ["cpp/main.cpp", "module", "cpp/main.cpp"], ["cpp/main.cpp", "namespace", "demo"]],
+        ["contains", ["cpp/main.cpp", "namespace", "demo"], ["cpp/main.cpp", "class", "demo::Base"]],
+        ["contains", ["cpp/main.cpp", "namespace", "demo"], ["cpp/main.cpp", "class", "demo::Derived"]],
+        ["contains", ["cpp/main.cpp", "namespace", "demo"], ["cpp/main.cpp", "function", "demo::start"]],
+        ["contains", ["cpp/main.cpp", "class", "demo::Base"], ["cpp/main.cpp", "method", "demo::Base::value"]],
+        ["contains", ["cpp/main.cpp", "class", "demo::Derived"], ["cpp/main.cpp", "method", "demo::Derived::run"]],
+        ["inherits", ["cpp/main.cpp", "class", "demo::Derived"], ["cpp/main.cpp", "class", "demo::Base"]],
+        ["calls", ["cpp/main.cpp", "method", "demo::Derived::run"], ["cpp/main.cpp", "method", "demo::Base::value"]]
+      ]
+    },
+    {
+      "name": "java-types-inheritance-and-call",
+      "language": "java",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["java/Main.java"],
+      "checked_kinds": ["class", "interface", "method", "namespace", "type"],
+      "checked_relations": ["calls", "contains", "inherits"],
+      "exact_relations": ["calls", "inherits"],
+      "expected_nodes": [
+        ["java/Main.java", "namespace", "demo"],
+        ["java/Main.java", "interface", "demo.Marker"],
+        ["java/Main.java", "method", "demo.Marker.mark(0)"],
+        ["java/Main.java", "class", "demo.Base"],
+        ["java/Main.java", "method", "demo.Base.value(0)"],
+        ["java/Main.java", "class", "demo.Main"],
+        ["java/Main.java", "method", "demo.Main.mark(0)"],
+        ["java/Main.java", "method", "demo.Main.run(0)"]
+      ],
+      "expected_edges": [
+        ["contains", ["java/Main.java", "module", "java/Main.java"], ["java/Main.java", "namespace", "demo"]],
+        ["contains", ["java/Main.java", "namespace", "demo"], ["java/Main.java", "interface", "demo.Marker"]],
+        ["contains", ["java/Main.java", "interface", "demo.Marker"], ["java/Main.java", "method", "demo.Marker.mark(0)"]],
+        ["contains", ["java/Main.java", "namespace", "demo"], ["java/Main.java", "class", "demo.Base"]],
+        ["contains", ["java/Main.java", "class", "demo.Base"], ["java/Main.java", "method", "demo.Base.value(0)"]],
+        ["contains", ["java/Main.java", "namespace", "demo"], ["java/Main.java", "class", "demo.Main"]],
+        ["contains", ["java/Main.java", "class", "demo.Main"], ["java/Main.java", "method", "demo.Main.mark(0)"]],
+        ["contains", ["java/Main.java", "class", "demo.Main"], ["java/Main.java", "method", "demo.Main.run(0)"]],
+        ["inherits", ["java/Main.java", "class", "demo.Main"], ["java/Main.java", "class", "demo.Base"]],
+        ["inherits", ["java/Main.java", "class", "demo.Main"], ["java/Main.java", "interface", "demo.Marker"]],
+        ["calls", ["java/Main.java", "method", "demo.Main.run(0)"], ["java/Main.java", "method", "demo.Base.value(0)"]]
+      ]
+    },
+    {
+      "name": "csharp-interface-and-class",
+      "language": "csharp",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["csharp/Program.cs"],
+      "checked_kinds": ["class", "interface", "method", "namespace", "type"],
+      "checked_relations": ["contains", "inherits"],
+      "exact_relations": ["inherits"],
+      "expected_nodes": [
+        ["csharp/Program.cs", "namespace", "Demo"],
+        ["csharp/Program.cs", "interface", "Demo.IWorker"],
+        ["csharp/Program.cs", "method", "Demo.IWorker.Run(0)"],
+        ["csharp/Program.cs", "class", "Demo.Worker"],
+        ["csharp/Program.cs", "method", "Demo.Worker.Run(0)"],
+        ["csharp/Program.cs", "method", "Demo.Worker.Save(0)"]
+      ],
+      "expected_edges": [
+        ["contains", ["csharp/Program.cs", "module", "csharp/Program.cs"], ["csharp/Program.cs", "namespace", "Demo"]],
+        ["contains", ["csharp/Program.cs", "namespace", "Demo"], ["csharp/Program.cs", "interface", "Demo.IWorker"]],
+        ["contains", ["csharp/Program.cs", "interface", "Demo.IWorker"], ["csharp/Program.cs", "method", "Demo.IWorker.Run(0)"]],
+        ["contains", ["csharp/Program.cs", "namespace", "Demo"], ["csharp/Program.cs", "class", "Demo.Worker"]],
+        ["contains", ["csharp/Program.cs", "class", "Demo.Worker"], ["csharp/Program.cs", "method", "Demo.Worker.Run(0)"]],
+        ["contains", ["csharp/Program.cs", "class", "Demo.Worker"], ["csharp/Program.cs", "method", "Demo.Worker.Save(0)"]],
+        ["inherits", ["csharp/Program.cs", "class", "Demo.Worker"], ["csharp/Program.cs", "interface", "Demo.IWorker"]]
+      ]
+    },
+    {
+      "name": "go-interface-methods-and-call",
+      "language": "go",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["go/main.go"],
+      "checked_kinds": ["function", "interface", "method", "namespace", "type"],
+      "checked_relations": ["calls", "contains"],
+      "exact_relations": ["calls"],
+      "expected_nodes": [
+        ["go/main.go", "namespace", "go"],
+        ["go/main.go", "interface", "go.Worker"],
+        ["go/main.go", "method", "go.Worker.Run(0)"],
+        ["go/main.go", "type", "go.Service"],
+        ["go/main.go", "method", "go.Service.Run(0)"],
+        ["go/main.go", "function", "go.Start(0)"],
+        ["go/main.go", "function", "go.helper(0)"]
+      ],
+      "expected_edges": [
+        ["contains", ["go/main.go", "namespace", "go"], ["go/main.go", "interface", "go.Worker"]],
+        ["contains", ["go/main.go", "interface", "go.Worker"], ["go/main.go", "method", "go.Worker.Run(0)"]],
+        ["contains", ["go/main.go", "namespace", "go"], ["go/main.go", "type", "go.Service"]],
+        ["contains", ["go/main.go", "type", "go.Service"], ["go/main.go", "method", "go.Service.Run(0)"]],
+        ["contains", ["go/main.go", "namespace", "go"], ["go/main.go", "function", "go.Start(0)"]],
+        ["contains", ["go/main.go", "namespace", "go"], ["go/main.go", "function", "go.helper(0)"]],
+        ["calls", ["go/main.go", "function", "go.Start(0)"], ["go/main.go", "function", "go.helper(0)"]]
+      ]
+    },
+    {
+      "name": "rust-trait-impl-and-call",
+      "language": "rust",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["rust/src/lib.rs"],
+      "checked_kinds": ["function", "interface", "method", "namespace", "type"],
+      "checked_relations": ["calls", "contains", "inherits"],
+      "exact_relations": ["calls", "inherits"],
+      "expected_nodes": [
+        ["rust/src/lib.rs", "namespace", "crate"],
+        ["rust/src/lib.rs", "namespace", "crate::rust"],
+        ["rust/src/lib.rs", "namespace", "crate::rust::src"],
+        ["rust/src/lib.rs", "type", "crate::rust::src::Service"],
+        ["rust/src/lib.rs", "interface", "crate::rust::src::Worker"],
+        ["rust/src/lib.rs", "method", "crate::rust::src::Worker::run(0)"],
+        ["rust/src/lib.rs", "method", "crate::rust::src::Service::run(0)"],
+        ["rust/src/lib.rs", "function", "crate::rust::src::start(0)"],
+        ["rust/src/lib.rs", "function", "crate::rust::src::helper(0)"]
+      ],
+      "expected_edges": [
+        ["contains", ["rust/src/lib.rs", "namespace", "crate::rust::src"], ["rust/src/lib.rs", "type", "crate::rust::src::Service"]],
+        ["contains", ["rust/src/lib.rs", "namespace", "crate::rust::src"], ["rust/src/lib.rs", "interface", "crate::rust::src::Worker"]],
+        ["contains", ["rust/src/lib.rs", "interface", "crate::rust::src::Worker"], ["rust/src/lib.rs", "method", "crate::rust::src::Worker::run(0)"]],
+        ["contains", ["rust/src/lib.rs", "type", "crate::rust::src::Service"], ["rust/src/lib.rs", "method", "crate::rust::src::Service::run(0)"]],
+        ["contains", ["rust/src/lib.rs", "namespace", "crate::rust::src"], ["rust/src/lib.rs", "function", "crate::rust::src::start(0)"]],
+        ["contains", ["rust/src/lib.rs", "namespace", "crate::rust::src"], ["rust/src/lib.rs", "function", "crate::rust::src::helper(0)"]],
+        ["inherits", ["rust/src/lib.rs", "type", "crate::rust::src::Service"], ["rust/src/lib.rs", "interface", "crate::rust::src::Worker"]],
+        ["calls", ["rust/src/lib.rs", "function", "crate::rust::src::start(0)"], ["rust/src/lib.rs", "function", "crate::rust::src::helper(0)"]]
+      ]
+    },
+    {
+      "name": "php-namespace-interface-and-class",
+      "language": "php",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["php/src/main.php"],
+      "checked_kinds": ["class", "function", "interface", "method", "namespace"],
+      "checked_relations": ["contains", "inherits"],
+      "exact_relations": ["inherits"],
+      "expected_nodes": [
+        ["php/src/main.php", "namespace", "Demo"],
+        ["php/src/main.php", "interface", "Demo\\Worker"],
+        ["php/src/main.php", "method", "Demo\\Worker::run(0)"],
+        ["php/src/main.php", "class", "Demo\\Service"],
+        ["php/src/main.php", "method", "Demo\\Service::run(0)"],
+        ["php/src/main.php", "function", "Demo\\start(0)"]
+      ],
+      "expected_edges": [
+        ["contains", ["php/src/main.php", "namespace", "Demo"], ["php/src/main.php", "interface", "Demo\\Worker"]],
+        ["contains", ["php/src/main.php", "interface", "Demo\\Worker"], ["php/src/main.php", "method", "Demo\\Worker::run(0)"]],
+        ["contains", ["php/src/main.php", "namespace", "Demo"], ["php/src/main.php", "class", "Demo\\Service"]],
+        ["contains", ["php/src/main.php", "class", "Demo\\Service"], ["php/src/main.php", "method", "Demo\\Service::run(0)"]],
+        ["contains", ["php/src/main.php", "namespace", "Demo"], ["php/src/main.php", "function", "Demo\\start(0)"]],
+        ["inherits", ["php/src/main.php", "class", "Demo\\Service"], ["php/src/main.php", "interface", "Demo\\Worker"]]
+      ]
+    },
+    {
+      "name": "ruby-module-class-and-calls",
+      "language": "ruby",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["ruby/main.rb"],
+      "checked_kinds": ["class", "method", "namespace"],
+      "checked_relations": ["calls", "contains"],
+      "exact_relations": ["calls"],
+      "expected_nodes": [
+        ["ruby/main.rb", "namespace", "<global>"],
+        ["ruby/main.rb", "namespace", "Demo"],
+        ["ruby/main.rb", "class", "Demo::Service"],
+        ["ruby/main.rb", "method", "Demo::Service#run(0)"],
+        ["ruby/main.rb", "method", "Demo.start(0)"]
+      ],
+      "expected_edges": [
+        ["contains", ["ruby/main.rb", "module", "ruby/main.rb"], ["ruby/main.rb", "namespace", "Demo"]],
+        ["contains", ["ruby/main.rb", "module", "ruby/main.rb"], ["ruby/main.rb", "class", "Demo::Service"]],
+        ["contains", ["ruby/main.rb", "namespace", "Demo"], ["ruby/main.rb", "class", "Demo::Service"]],
+        ["contains", ["ruby/main.rb", "namespace", "Demo"], ["ruby/main.rb", "method", "Demo.start(0)"]],
+        ["contains", ["ruby/main.rb", "class", "Demo::Service"], ["ruby/main.rb", "method", "Demo::Service#run(0)"]],
+        ["calls", ["ruby/main.rb", "method", "Demo.start(0)"], ["ruby/main.rb", "class", "Demo::Service"]],
+        ["calls", ["ruby/main.rb", "method", "Demo.start(0)"], ["ruby/main.rb", "method", "Demo::Service#run(0)"]]
+      ]
+    },
+    {
+      "name": "kotlin-interface-class-and-call",
+      "language": "kotlin",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["kotlin/Main.kt"],
+      "checked_kinds": ["class", "function", "interface", "method", "namespace"],
+      "checked_relations": ["calls", "contains", "inherits"],
+      "exact_relations": ["calls", "inherits"],
+      "expected_nodes": [
+        ["kotlin/Main.kt", "namespace", "demo"],
+        ["kotlin/Main.kt", "interface", "demo.Worker"],
+        ["kotlin/Main.kt", "method", "demo.Worker.run(0)"],
+        ["kotlin/Main.kt", "class", "demo.Service"],
+        ["kotlin/Main.kt", "method", "demo.Service.run(0)"],
+        ["kotlin/Main.kt", "function", "demo.start(0)"]
+      ],
+      "expected_edges": [
+        ["contains", ["kotlin/Main.kt", "module", "kotlin/Main.kt"], ["kotlin/Main.kt", "namespace", "demo"]],
+        ["contains", ["kotlin/Main.kt", "namespace", "demo"], ["kotlin/Main.kt", "interface", "demo.Worker"]],
+        ["contains", ["kotlin/Main.kt", "interface", "demo.Worker"], ["kotlin/Main.kt", "method", "demo.Worker.run(0)"]],
+        ["contains", ["kotlin/Main.kt", "namespace", "demo"], ["kotlin/Main.kt", "class", "demo.Service"]],
+        ["contains", ["kotlin/Main.kt", "class", "demo.Service"], ["kotlin/Main.kt", "method", "demo.Service.run(0)"]],
+        ["contains", ["kotlin/Main.kt", "namespace", "demo"], ["kotlin/Main.kt", "function", "demo.start(0)"]],
+        ["inherits", ["kotlin/Main.kt", "class", "demo.Service"], ["kotlin/Main.kt", "interface", "demo.Worker"]],
+        ["calls", ["kotlin/Main.kt", "function", "demo.start(0)"], ["kotlin/Main.kt", "class", "demo.Service"]],
+        ["calls", ["kotlin/Main.kt", "function", "demo.start(0)"], ["kotlin/Main.kt", "method", "demo.Service.run(0)"]]
+      ]
+    },
+    {
+      "name": "swift-protocol-class-and-function",
+      "language": "swift",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["swift/Models.swift"],
+      "checked_kinds": ["class", "function", "interface", "method", "type"],
+      "checked_relations": ["contains", "inherits"],
+      "exact_relations": ["inherits"],
+      "expected_nodes": [
+        ["swift/Models.swift", "type", "Item"],
+        ["swift/Models.swift", "interface", "Worker"],
+        ["swift/Models.swift", "method", "Worker.run()(0)"],
+        ["swift/Models.swift", "class", "Service"],
+        ["swift/Models.swift", "method", "Service.run()(0)"],
+        ["swift/Models.swift", "function", "start()(0)"]
+      ],
+      "expected_edges": [
+        ["contains", ["swift/Models.swift", "module", "swift/Models.swift"], ["swift/Models.swift", "type", "Item"]],
+        ["contains", ["swift/Models.swift", "module", "swift/Models.swift"], ["swift/Models.swift", "interface", "Worker"]],
+        ["contains", ["swift/Models.swift", "interface", "Worker"], ["swift/Models.swift", "method", "Worker.run()(0)"]],
+        ["contains", ["swift/Models.swift", "module", "swift/Models.swift"], ["swift/Models.swift", "class", "Service"]],
+        ["contains", ["swift/Models.swift", "class", "Service"], ["swift/Models.swift", "method", "Service.run()(0)"]],
+        ["contains", ["swift/Models.swift", "module", "swift/Models.swift"], ["swift/Models.swift", "function", "start()(0)"]],
+        ["inherits", ["swift/Models.swift", "class", "Service"], ["swift/Models.swift", "interface", "Worker"]]
+      ]
+    },
+    {
+      "name": "bash-functions-and-call",
+      "language": "bash",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["shell/script.sh"],
+      "checked_kinds": ["function"],
+      "checked_relations": ["calls", "contains"],
+      "exact_relations": ["calls"],
+      "expected_nodes": [["shell/script.sh", "function", "shell/script.sh:helper"], ["shell/script.sh", "function", "shell/script.sh:main"]],
+      "expected_edges": [
+        ["contains", ["shell/script.sh", "module", "shell/script.sh"], ["shell/script.sh", "function", "shell/script.sh:helper"]],
+        ["contains", ["shell/script.sh", "module", "shell/script.sh"], ["shell/script.sh", "function", "shell/script.sh:main"]],
+        ["calls", ["shell/script.sh", "function", "shell/script.sh:main"], ["shell/script.sh", "function", "shell/script.sh:helper"]]
+      ]
+    },
+    {
+      "name": "posix-shell-functions-and-call",
+      "language": "posix-shell",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["shell/script.sh"],
+      "checked_kinds": ["function"],
+      "checked_relations": ["calls", "contains"],
+      "exact_relations": ["calls"],
+      "expected_nodes": [["shell/script.sh", "function", "shell/script.sh:helper"], ["shell/script.sh", "function", "shell/script.sh:main"]],
+      "expected_edges": [
+        ["contains", ["shell/script.sh", "module", "shell/script.sh"], ["shell/script.sh", "function", "shell/script.sh:helper"]],
+        ["contains", ["shell/script.sh", "module", "shell/script.sh"], ["shell/script.sh", "function", "shell/script.sh:main"]],
+        ["calls", ["shell/script.sh", "function", "shell/script.sh:main"], ["shell/script.sh", "function", "shell/script.sh:helper"]]
+      ]
+    },
+    {
+      "name": "powershell-functions-and-call",
+      "language": "powershell",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["powershell/script.ps1"],
+      "checked_kinds": ["function"],
+      "checked_relations": ["calls", "contains"],
+      "exact_relations": ["calls"],
+      "expected_nodes": [["powershell/script.ps1", "function", "powershell/script.ps1:Get-Value"], ["powershell/script.ps1", "function", "powershell/script.ps1:Start-App"]],
+      "expected_edges": [
+        ["contains", ["powershell/script.ps1", "module", "powershell/script.ps1"], ["powershell/script.ps1", "function", "powershell/script.ps1:Get-Value"]],
+        ["contains", ["powershell/script.ps1", "module", "powershell/script.ps1"], ["powershell/script.ps1", "function", "powershell/script.ps1:Start-App"]],
+        ["calls", ["powershell/script.ps1", "function", "powershell/script.ps1:Start-App"], ["powershell/script.ps1", "function", "powershell/script.ps1:Get-Value"]]
+      ]
+    },
+    {
+      "name": "dart-class-method-and-main",
+      "language": "dart",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["dart/app.dart"],
+      "checked_kinds": ["class", "function", "method"],
+      "checked_relations": ["calls", "contains"],
+      "exact_relations": ["calls"],
+      "expected_nodes": [["dart/app.dart", "class", "dart/app.dart:Service"], ["dart/app.dart", "method", "dart/app.dart:run"], ["dart/app.dart", "function", "dart/app.dart:main"]],
+      "expected_edges": [
+        ["contains", ["dart/app.dart", "module", "dart/app.dart"], ["dart/app.dart", "class", "dart/app.dart:Service"]],
+        ["contains", ["dart/app.dart", "class", "dart/app.dart:Service"], ["dart/app.dart", "method", "dart/app.dart:run"]],
+        ["contains", ["dart/app.dart", "module", "dart/app.dart"], ["dart/app.dart", "function", "dart/app.dart:main"]],
+        ["calls", ["dart/app.dart", "module", "dart/app.dart"], ["dart/app.dart", "class", "dart/app.dart:Service"]],
+        ["calls", ["dart/app.dart", "module", "dart/app.dart"], ["dart/app.dart", "method", "dart/app.dart:run"]]
+      ]
+    },
+    {
+      "name": "scala-trait-class-and-object",
+      "language": "scala",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["scala/Main.scala"],
+      "checked_kinds": ["class", "interface", "method", "namespace"],
+      "checked_relations": ["contains", "inherits", "references"],
+      "exact_relations": ["inherits"],
+      "expected_nodes": [
+        ["scala/Main.scala", "namespace", "demo"],
+        ["scala/Main.scala", "interface", "scala/Main.scala:Worker"],
+        ["scala/Main.scala", "method", "scala/Main.scala:Worker.run"],
+        ["scala/Main.scala", "class", "scala/Main.scala:Service"],
+        ["scala/Main.scala", "method", "scala/Main.scala:Service.run"],
+        ["scala/Main.scala", "class", "scala/Main.scala:Main"],
+        ["scala/Main.scala", "method", "scala/Main.scala:Main.start"]
+      ],
+      "expected_edges": [
+        ["contains", ["scala/Main.scala", "module", "scala/Main.scala"], ["scala/Main.scala", "namespace", "demo"]],
+        ["contains", ["scala/Main.scala", "module", "scala/Main.scala"], ["scala/Main.scala", "interface", "scala/Main.scala:Worker"]],
+        ["contains", ["scala/Main.scala", "interface", "scala/Main.scala:Worker"], ["scala/Main.scala", "method", "scala/Main.scala:Worker.run"]],
+        ["contains", ["scala/Main.scala", "module", "scala/Main.scala"], ["scala/Main.scala", "class", "scala/Main.scala:Service"]],
+        ["contains", ["scala/Main.scala", "class", "scala/Main.scala:Service"], ["scala/Main.scala", "method", "scala/Main.scala:Service.run"]],
+        ["contains", ["scala/Main.scala", "module", "scala/Main.scala"], ["scala/Main.scala", "class", "scala/Main.scala:Main"]],
+        ["contains", ["scala/Main.scala", "class", "scala/Main.scala:Main"], ["scala/Main.scala", "method", "scala/Main.scala:Main.start"]],
+        ["inherits", ["scala/Main.scala", "class", "scala/Main.scala:Service"], ["scala/Main.scala", "interface", "scala/Main.scala:Worker"]],
+        ["references", ["scala/Main.scala", "method", "scala/Main.scala:Main.start"], ["scala/Main.scala", "class", "scala/Main.scala:Service"]]
+      ]
+    },
+    {
+      "name": "mysql-data-relations",
+      "language": "mysql",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["sql/database.sql"],
+      "checked_kinds": ["type", "unknown"],
+      "checked_relations": ["contains", "defines", "joins", "reads", "references", "writes"],
+      "exact_relations": ["defines", "joins", "reads", "references", "writes"],
+      "expected_nodes": [
+        ["sql/database.sql", "unknown", "sql/database.sql:statement:0:create"],
+        ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"],
+        ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"],
+        ["sql/database.sql", "unknown", "sql/database.sql:statement:3:insert"],
+        ["sql/database.sql", "type", "teams"],
+        ["sql/database.sql", "type", "users"],
+        ["sql/database.sql", "type", "active_users"]
+      ],
+      "expected_edges": [
+        ["contains", ["sql/database.sql", "module", "sql/database.sql"], ["sql/database.sql", "unknown", "sql/database.sql:statement:0:create"]],
+        ["contains", ["sql/database.sql", "module", "sql/database.sql"], ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"]],
+        ["contains", ["sql/database.sql", "module", "sql/database.sql"], ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"]],
+        ["contains", ["sql/database.sql", "module", "sql/database.sql"], ["sql/database.sql", "unknown", "sql/database.sql:statement:3:insert"]],
+        ["defines", ["sql/database.sql", "unknown", "sql/database.sql:statement:0:create"], ["sql/database.sql", "type", "teams"]],
+        ["defines", ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"], ["sql/database.sql", "type", "users"]],
+        ["defines", ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "type", "active_users"]],
+        ["reads", ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"], ["sql/database.sql", "type", "teams"]],
+        ["reads", ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "type", "users"]],
+        ["reads", ["sql/database.sql", "unknown", "sql/database.sql:statement:3:insert"], ["sql/database.sql", "type", "users"]],
+        ["reads", ["sql/database.sql", "unknown", "sql/database.sql:statement:3:insert"], ["sql/database.sql", "type", "teams"]],
+        ["writes", ["sql/database.sql", "unknown", "sql/database.sql:statement:0:create"], ["sql/database.sql", "type", "teams"]],
+        ["writes", ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"], ["sql/database.sql", "type", "users"]],
+        ["writes", ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "type", "active_users"]],
+        ["joins", ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "type", "teams"]],
+        ["references", ["sql/database.sql", "type", "users"], ["sql/database.sql", "type", "teams"]]
+      ]
+    },
+    {
+      "name": "postgresql-data-relations",
+      "language": "postgresql",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["sql/database.sql"],
+      "checked_kinds": ["type", "unknown"],
+      "checked_relations": ["contains", "defines", "joins", "reads", "references", "writes"],
+      "exact_relations": ["defines", "joins", "reads", "references", "writes"],
+      "expected_nodes": [["sql/database.sql", "unknown", "sql/database.sql:statement:0:create"], ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"], ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "unknown", "sql/database.sql:statement:3:insert"], ["sql/database.sql", "type", "teams"], ["sql/database.sql", "type", "users"], ["sql/database.sql", "type", "active_users"]],
+      "expected_edges": [
+        ["contains", ["sql/database.sql", "module", "sql/database.sql"], ["sql/database.sql", "unknown", "sql/database.sql:statement:0:create"]],
+        ["contains", ["sql/database.sql", "module", "sql/database.sql"], ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"]],
+        ["contains", ["sql/database.sql", "module", "sql/database.sql"], ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"]],
+        ["contains", ["sql/database.sql", "module", "sql/database.sql"], ["sql/database.sql", "unknown", "sql/database.sql:statement:3:insert"]],
+        ["defines", ["sql/database.sql", "unknown", "sql/database.sql:statement:0:create"], ["sql/database.sql", "type", "teams"]],
+        ["defines", ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"], ["sql/database.sql", "type", "users"]],
+        ["defines", ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "type", "active_users"]],
+        ["reads", ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"], ["sql/database.sql", "type", "teams"]],
+        ["reads", ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "type", "users"]],
+        ["reads", ["sql/database.sql", "unknown", "sql/database.sql:statement:3:insert"], ["sql/database.sql", "type", "users"]],
+        ["reads", ["sql/database.sql", "unknown", "sql/database.sql:statement:3:insert"], ["sql/database.sql", "type", "teams"]],
+        ["writes", ["sql/database.sql", "unknown", "sql/database.sql:statement:0:create"], ["sql/database.sql", "type", "teams"]],
+        ["writes", ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"], ["sql/database.sql", "type", "users"]],
+        ["writes", ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "type", "active_users"]],
+        ["joins", ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "type", "teams"]],
+        ["references", ["sql/database.sql", "type", "users"], ["sql/database.sql", "type", "teams"]]
+      ]
+    },
+    {
+      "name": "sqlite-data-relations",
+      "language": "sqlite",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["sql/database.sql"],
+      "checked_kinds": ["type", "unknown"],
+      "checked_relations": ["contains", "defines", "joins", "reads", "references", "writes"],
+      "exact_relations": ["defines", "joins", "reads", "references", "writes"],
+      "expected_nodes": [["sql/database.sql", "unknown", "sql/database.sql:statement:0:create"], ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"], ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "unknown", "sql/database.sql:statement:3:insert"], ["sql/database.sql", "type", "teams"], ["sql/database.sql", "type", "users"], ["sql/database.sql", "type", "active_users"]],
+      "expected_edges": [
+        ["contains", ["sql/database.sql", "module", "sql/database.sql"], ["sql/database.sql", "unknown", "sql/database.sql:statement:0:create"]],
+        ["contains", ["sql/database.sql", "module", "sql/database.sql"], ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"]],
+        ["contains", ["sql/database.sql", "module", "sql/database.sql"], ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"]],
+        ["contains", ["sql/database.sql", "module", "sql/database.sql"], ["sql/database.sql", "unknown", "sql/database.sql:statement:3:insert"]],
+        ["defines", ["sql/database.sql", "unknown", "sql/database.sql:statement:0:create"], ["sql/database.sql", "type", "teams"]],
+        ["defines", ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"], ["sql/database.sql", "type", "users"]],
+        ["defines", ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "type", "active_users"]],
+        ["reads", ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"], ["sql/database.sql", "type", "teams"]],
+        ["reads", ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "type", "users"]],
+        ["reads", ["sql/database.sql", "unknown", "sql/database.sql:statement:3:insert"], ["sql/database.sql", "type", "users"]],
+        ["reads", ["sql/database.sql", "unknown", "sql/database.sql:statement:3:insert"], ["sql/database.sql", "type", "teams"]],
+        ["writes", ["sql/database.sql", "unknown", "sql/database.sql:statement:0:create"], ["sql/database.sql", "type", "teams"]],
+        ["writes", ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"], ["sql/database.sql", "type", "users"]],
+        ["writes", ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "type", "active_users"]],
+        ["joins", ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "type", "teams"]],
+        ["references", ["sql/database.sql", "type", "users"], ["sql/database.sql", "type", "teams"]]
+      ]
+    },
+    {
+      "name": "sqlserver-data-relations",
+      "language": "sqlserver",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["sql/database.sql"],
+      "checked_kinds": ["type", "unknown"],
+      "checked_relations": ["contains", "defines", "joins", "reads", "references", "writes"],
+      "exact_relations": ["defines", "joins", "reads", "references", "writes"],
+      "expected_nodes": [["sql/database.sql", "unknown", "sql/database.sql:statement:0:create"], ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"], ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "unknown", "sql/database.sql:statement:3:insert"], ["sql/database.sql", "type", "teams"], ["sql/database.sql", "type", "users"], ["sql/database.sql", "type", "active_users"]],
+      "expected_edges": [
+        ["contains", ["sql/database.sql", "module", "sql/database.sql"], ["sql/database.sql", "unknown", "sql/database.sql:statement:0:create"]],
+        ["contains", ["sql/database.sql", "module", "sql/database.sql"], ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"]],
+        ["contains", ["sql/database.sql", "module", "sql/database.sql"], ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"]],
+        ["contains", ["sql/database.sql", "module", "sql/database.sql"], ["sql/database.sql", "unknown", "sql/database.sql:statement:3:insert"]],
+        ["defines", ["sql/database.sql", "unknown", "sql/database.sql:statement:0:create"], ["sql/database.sql", "type", "teams"]],
+        ["defines", ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"], ["sql/database.sql", "type", "users"]],
+        ["defines", ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "type", "active_users"]],
+        ["reads", ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"], ["sql/database.sql", "type", "teams"]],
+        ["reads", ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "type", "users"]],
+        ["reads", ["sql/database.sql", "unknown", "sql/database.sql:statement:3:insert"], ["sql/database.sql", "type", "users"]],
+        ["reads", ["sql/database.sql", "unknown", "sql/database.sql:statement:3:insert"], ["sql/database.sql", "type", "teams"]],
+        ["writes", ["sql/database.sql", "unknown", "sql/database.sql:statement:0:create"], ["sql/database.sql", "type", "teams"]],
+        ["writes", ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"], ["sql/database.sql", "type", "users"]],
+        ["writes", ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "type", "active_users"]],
+        ["joins", ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "type", "teams"]],
+        ["references", ["sql/database.sql", "type", "users"], ["sql/database.sql", "type", "teams"]]
+      ]
+    },
+    {
+      "name": "oracle-data-relations",
+      "language": "oracle",
+      "root": "tests/completeness/corpus",
+      "expected_files": ["sql/database.sql"],
+      "checked_kinds": ["type", "unknown"],
+      "checked_relations": ["contains", "defines", "joins", "reads", "references", "writes"],
+      "exact_relations": ["defines", "joins", "reads", "references", "writes"],
+      "expected_nodes": [["sql/database.sql", "unknown", "sql/database.sql:statement:0:create"], ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"], ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "unknown", "sql/database.sql:statement:3:insert"], ["sql/database.sql", "type", "teams"], ["sql/database.sql", "type", "users"], ["sql/database.sql", "type", "active_users"]],
+      "expected_edges": [
+        ["contains", ["sql/database.sql", "module", "sql/database.sql"], ["sql/database.sql", "unknown", "sql/database.sql:statement:0:create"]],
+        ["contains", ["sql/database.sql", "module", "sql/database.sql"], ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"]],
+        ["contains", ["sql/database.sql", "module", "sql/database.sql"], ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"]],
+        ["contains", ["sql/database.sql", "module", "sql/database.sql"], ["sql/database.sql", "unknown", "sql/database.sql:statement:3:insert"]],
+        ["defines", ["sql/database.sql", "unknown", "sql/database.sql:statement:0:create"], ["sql/database.sql", "type", "teams"]],
+        ["defines", ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"], ["sql/database.sql", "type", "users"]],
+        ["defines", ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "type", "active_users"]],
+        ["reads", ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"], ["sql/database.sql", "type", "teams"]],
+        ["reads", ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "type", "users"]],
+        ["reads", ["sql/database.sql", "unknown", "sql/database.sql:statement:3:insert"], ["sql/database.sql", "type", "users"]],
+        ["reads", ["sql/database.sql", "unknown", "sql/database.sql:statement:3:insert"], ["sql/database.sql", "type", "teams"]],
+        ["writes", ["sql/database.sql", "unknown", "sql/database.sql:statement:0:create"], ["sql/database.sql", "type", "teams"]],
+        ["writes", ["sql/database.sql", "unknown", "sql/database.sql:statement:1:create"], ["sql/database.sql", "type", "users"]],
+        ["writes", ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "type", "active_users"]],
+        ["joins", ["sql/database.sql", "unknown", "sql/database.sql:statement:2:create"], ["sql/database.sql", "type", "teams"]],
+        ["references", ["sql/database.sql", "type", "users"], ["sql/database.sql", "type", "teams"]]
+      ]
+    }
+  ]
+}

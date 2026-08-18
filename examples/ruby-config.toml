@@ -1,0 +1,39 @@
+# Connection Analysis Mapping v1 Ruby example
+
+[analysis]
+language = "ruby"
+include_tests = false
+follow_symlinks = false
+max_file_bytes = 2000000
+
+include = ["**/*.rb", "**/*.rake", "**/*.gemspec", "**/*.ru"]
+exclude = [
+  ".git/**",
+  ".connection-map/**",
+  "**/vendor/**",
+  "**/tmp/**",
+]
+test_patterns = [
+  "spec/**/*.rb",
+  "spec/*.rb",
+  "**/test/**/*.rb",
+  "**/test/*.rb",
+  "**/tests/**/*.rb",
+  "**/tests/*.rb",
+  "**/test/**/*.rake",
+  "**/test/*.rake",
+  "**/tests/**/*.rake",
+  "**/tests/*.rake",
+  "**/test/**/*.gemspec",
+  "**/test/*.gemspec",
+  "**/tests/**/*.gemspec",
+  "**/tests/*.gemspec",
+  "**/test/**/*.ru",
+  "**/test/*.ru",
+  "**/tests/**/*.ru",
+  "**/tests/*.ru",
+  "**/*_spec.rb",
+  "**/*_test.rb",
+  "**/test_*.rb",
+]
+generated = ["**/*.generated.rb", "**/*_generated.rb"]

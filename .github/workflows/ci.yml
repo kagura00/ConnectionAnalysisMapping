@@ -1,0 +1,201 @@
+name: CI
+
+on:
+  push:
+    branches: [main, misc]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.9.4"
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - name: Sync locked environment
+        run: uv sync --locked --extra test --extra web --extra sql --extra lint
+      - name: Run Python tests
+        run: uv run pytest
+      - name: Run Ruff lint
+        run: uv run ruff check src tests scripts
+      - name: Check viewer JavaScript syntax
+        run: node --check src/connection_map/web/app.js
+      - name: Run performance smoke fixture
+        run: |
+          uv run python scripts/generate_synthetic_graph.py --nodes 1000 --output .tmp/ci-performance-1k.json
+          uv run connection-map validate .tmp/ci-performance-1k.json
+          uv run connection-map split .tmp/ci-performance-1k.json --output .tmp/ci-bundle-1k
+          uv run connection-map validate-bundle .tmp/ci-bundle-1k
+          uv run connection-map search .tmp/ci-bundle-1k function_999
+
+  visual-basic:
+    name: Test VB.NET grammar
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.9.4"
+          python-version: "3.11"
+          enable-cache: true
+      - name: Sync locked environment
+        run: uv sync --locked --extra test --extra web --extra visual-basic
+      - name: Run extended analyzer tests
+        run: uv run pytest tests/test_extended_analyzer.py -q
+
+  package:
+    name: Build distribution
+    runs-on: ubuntu-latest
+    needs: test
+    env:
+      SOURCE_DATE_EPOCH: "1704067200"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.9.4"
+          python-version: "3.11"
+          enable-cache: true
+      - name: Sync locked environment
+        run: uv sync --locked --extra test
+      - name: Build source and wheel distributions
+        run: uv build
+      - name: Normalize source archive timestamps
+        run: uv run python scripts/normalize_dist.py --dist dist --source-date-epoch 1704067200
+      - name: Generate release checksum manifest
+        run: uv run python scripts/build_release_manifest.py --dist dist --output dist/SHA256SUMS.txt
+      - name: Smoke source and wheel distributions
+        shell: bash
+        run: |
+          set -euo pipefail
+          smoke_root="$(mktemp -d)"
+          source_archive="$(find dist -maxdepth 1 -name '*.tar.gz' -print -quit)"
+          wheel="$(find dist -maxdepth 1 -name '*.whl' -print -quit)"
+          python -m venv "$smoke_root/source"
+          "$smoke_root/source/bin/python" -m pip install --no-deps "$source_archive"
+          "$smoke_root/source/bin/python" -m connection_map --help
+          python -m venv "$smoke_root/wheel"
+          "$smoke_root/wheel/bin/python" -m pip install --no-deps "$wheel"
+          "$smoke_root/wheel/bin/python" -m connection_map --help
+
+  installer:
+    name: Build installer media (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: test
+    env:
+      SOURCE_DATE_EPOCH: "1704067200"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.9.4"
+          python-version: "3.11"
+          enable-cache: true
+      - name: Sync locked packaging environment
+        run: uv sync --locked --extra packaging
+      - name: Build source and wheel distributions
+        run: uv build
+      - name: Normalize source archive timestamps
+        run: uv run python scripts/normalize_dist.py --dist dist --source-date-epoch 1704067200
+      - name: Prepare bundled Python runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: uv run python scripts/fetch_python_runtime.py --target windows-amd64 --output .tmp/python-runtime --force
+      - name: Prepare bundled Python runtime (Linux)
+        if: runner.os == 'Linux'
+        run: uv run python scripts/fetch_python_runtime.py --provider python-build-standalone --target linux-x86_64 --output .tmp/python-runtime --force
+      - name: Prepare bundled Python runtime (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          set -eu
+          case "$(uname -m)" in
+            arm64) target=macos-arm64 ;;
+            x86_64) target=macos-x86_64 ;;
+            *) echo "unsupported macOS architecture: $(uname -m)" >&2; exit 2 ;;
+          esac
+          uv run python scripts/fetch_python_runtime.py --provider python-build-standalone --target "$target" --output .tmp/python-runtime --force
+      - name: Build installer media
+        run: uv run python scripts/build_installers.py --clean --python-runtime .tmp/python-runtime
+      - name: Verify release checksums
+        run: |
+          uv run python -c 'from pathlib import Path; import hashlib; root=Path("release-artifacts"); rows=[line.split() for line in (root/"SHA256SUMS.txt").read_text().splitlines()]; assert all(hashlib.sha256((root/name).read_bytes()).hexdigest()==digest for digest,name in rows); print(f"checksums-ok={len(rows)}")'
+      - name: Smoke test POSIX installer
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p .tmp/installer-smoke
+          installer=$(find release-artifacts -name '*-posix.sh' -print -quit)
+          test -n "$installer"
+          sh "$installer" --target "$PWD/.tmp/installer-smoke" --yes
+          test -f .tmp/installer-smoke/.connection-map/core/core-manifest.json
+      - name: Smoke test portable package (POSIX)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p .tmp/portable-smoke
+          portable=$(find release-artifacts -name 'connection-map-portable-*.zip' -print -quit)
+          test -n "$portable"
+          unzip -q "$portable" -d .tmp/portable-smoke
+          .tmp/portable-smoke/connection-map-portable/launcher/connection-map.sh --help
+          .tmp/portable-smoke/connection-map-portable/launcher/connection-map.sh analyze --root tests/fixtures/basic_repo --allow-empty --deterministic
+          test -f .tmp/portable-smoke/connection-map-portable/data/registry.json
+      - name: Smoke test Windows CLI installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force .tmp/installer-smoke | Out-Null
+          $installer = Get-ChildItem release-artifacts -Filter '*-windows-*-cli.exe' | Select-Object -First 1
+          if ($null -eq $installer) { throw 'Windows CLI installer was not built' }
+          $target = (Resolve-Path .tmp/installer-smoke).Path
+          & $installer.FullName --target $target --yes
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path .tmp/installer-smoke/.connection-map/core/core-manifest.json)) { throw 'core manifest was not installed' }
+      - name: Smoke test portable package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force .tmp/portable-smoke | Out-Null
+          $portable = Get-ChildItem release-artifacts -Filter 'connection-map-portable-*.zip' | Select-Object -First 1
+          if ($null -eq $portable) { throw 'portable package was not built' }
+          Expand-Archive -LiteralPath $portable.FullName -DestinationPath .tmp/portable-smoke
+          & (Resolve-Path .tmp/portable-smoke/connection-map-portable/launcher/connection-map.cmd) --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & (Resolve-Path .tmp/portable-smoke/connection-map-portable/launcher/connection-map.cmd) analyze --root tests/fixtures/basic_repo --allow-empty --deterministic
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path .tmp/portable-smoke/connection-map-portable/data/registry.json)) { throw 'portable analyze did not create registry' }
+      - name: Upload installer media
+        uses: actions/upload-artifact@v4
+        with:
+          name: connection-map-release-artifacts-${{ matrix.os }}
+          path: release-artifacts
+          if-no-files-found: error

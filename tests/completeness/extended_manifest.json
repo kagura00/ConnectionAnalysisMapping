@@ -1,0 +1,445 @@
+{
+  "format": "connection-analysis-completeness",
+  "version": 1,
+  "cases": [
+    {
+      "name": "vbnet-declarations-and-call",
+      "language": "vbnet",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["vbnet/Program.vb"],
+      "checked_kinds": ["module", "namespace", "class", "method"],
+      "checked_relations": ["contains", "calls"],
+      "exact_relations": ["contains", "calls"],
+      "expected_nodes": [
+        ["vbnet/Program.vb", "module", "vbnet/Program.vb"],
+        ["vbnet/Program.vb", "namespace", "vbnet/Program.vb.Demo"],
+        ["vbnet/Program.vb", "class", "vbnet/Program.vb.Demo.Service"],
+        ["vbnet/Program.vb", "method", "vbnet/Program.vb.Demo.Service.Run"],
+        ["vbnet/Program.vb", "method", "vbnet/Program.vb.Demo.Service.Helper"]
+      ],
+      "expected_edges": [
+        ["contains", ["vbnet/Program.vb", "module", "vbnet/Program.vb"], ["vbnet/Program.vb", "namespace", "vbnet/Program.vb.Demo"]],
+        ["contains", ["vbnet/Program.vb", "namespace", "vbnet/Program.vb.Demo"], ["vbnet/Program.vb", "class", "vbnet/Program.vb.Demo.Service"]],
+        ["contains", ["vbnet/Program.vb", "class", "vbnet/Program.vb.Demo.Service"], ["vbnet/Program.vb", "method", "vbnet/Program.vb.Demo.Service.Run"]],
+        ["contains", ["vbnet/Program.vb", "class", "vbnet/Program.vb.Demo.Service"], ["vbnet/Program.vb", "method", "vbnet/Program.vb.Demo.Service.Helper"]],
+        ["calls", ["vbnet/Program.vb", "method", "vbnet/Program.vb.Demo.Service.Run"], ["vbnet/Program.vb", "method", "vbnet/Program.vb.Demo.Service.Helper"]]
+      ]
+    },
+    {
+      "name": "vba-module-members",
+      "language": "vba",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["vba/Module.bas"],
+      "checked_kinds": ["module", "namespace", "method"],
+      "checked_relations": ["contains"],
+      "exact_relations": ["contains"],
+      "expected_nodes": [
+        ["vba/Module.bas", "module", "vba/Module.bas"],
+        ["vba/Module.bas", "namespace", "vba/Module.bas.Module1"],
+        ["vba/Module.bas", "method", "vba/Module.bas.Module1.Run"],
+        ["vba/Module.bas", "method", "vba/Module.bas.Module1.Helper"]
+      ],
+      "expected_edges": [
+        ["contains", ["vba/Module.bas", "module", "vba/Module.bas"], ["vba/Module.bas", "namespace", "vba/Module.bas.Module1"]],
+        ["contains", ["vba/Module.bas", "namespace", "vba/Module.bas.Module1"], ["vba/Module.bas", "method", "vba/Module.bas.Module1.Run"]],
+        ["contains", ["vba/Module.bas", "namespace", "vba/Module.bas.Module1"], ["vba/Module.bas", "method", "vba/Module.bas.Module1.Helper"]]
+      ]
+    },
+    {
+      "name": "lua-functions-and-call",
+      "language": "lua",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["lua/app.lua"],
+      "checked_kinds": ["module", "function"],
+      "checked_relations": ["contains", "calls"],
+      "exact_relations": ["contains", "calls"],
+      "expected_nodes": [
+        ["lua/app.lua", "module", "lua/app.lua"],
+        ["lua/app.lua", "function", "lua/app.lua.M.run"],
+        ["lua/app.lua", "function", "lua/app.lua.helper"]
+      ],
+      "expected_edges": [
+        ["contains", ["lua/app.lua", "module", "lua/app.lua"], ["lua/app.lua", "function", "lua/app.lua.M.run"]],
+        ["contains", ["lua/app.lua", "module", "lua/app.lua"], ["lua/app.lua", "function", "lua/app.lua.helper"]],
+        ["calls", ["lua/app.lua", "function", "lua/app.lua.M.run"], ["lua/app.lua", "function", "lua/app.lua.helper"]]
+      ]
+    },
+    {
+      "name": "haskell-functions",
+      "language": "haskell",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["haskell/Main.hs"],
+      "checked_kinds": ["module", "function"],
+      "checked_relations": ["contains"],
+      "exact_relations": ["contains"],
+      "expected_nodes": [
+        ["haskell/Main.hs", "module", "haskell/Main.hs"],
+        ["haskell/Main.hs", "function", "haskell/Main.hs.helper"],
+        ["haskell/Main.hs", "function", "haskell/Main.hs.main"]
+      ],
+      "expected_edges": [
+        ["contains", ["haskell/Main.hs", "module", "haskell/Main.hs"], ["haskell/Main.hs", "function", "haskell/Main.hs.helper"]],
+        ["contains", ["haskell/Main.hs", "module", "haskell/Main.hs"], ["haskell/Main.hs", "function", "haskell/Main.hs.main"]]
+      ]
+    },
+    {
+      "name": "perl-package-and-functions",
+      "language": "perl",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["perl/main.pl"],
+      "checked_kinds": ["module", "namespace", "function", "method"],
+      "checked_relations": ["contains", "calls"],
+      "exact_relations": ["contains", "calls"],
+      "expected_nodes": [
+        ["perl/main.pl", "module", "perl/main.pl"],
+        ["perl/main.pl", "namespace", "perl/main.pl.Demo"],
+        ["perl/main.pl", "method", "perl/main.pl.Demo.helper"],
+        ["perl/main.pl", "function", "perl/main.pl.start"]
+      ],
+      "expected_edges": [
+        ["contains", ["perl/main.pl", "module", "perl/main.pl"], ["perl/main.pl", "namespace", "perl/main.pl.Demo"]],
+        ["contains", ["perl/main.pl", "namespace", "perl/main.pl.Demo"], ["perl/main.pl", "method", "perl/main.pl.Demo.helper"]],
+        ["contains", ["perl/main.pl", "module", "perl/main.pl"], ["perl/main.pl", "function", "perl/main.pl.start"]],
+        ["calls", ["perl/main.pl", "function", "perl/main.pl.start"], ["perl/main.pl", "method", "perl/main.pl.Demo.helper"]]
+      ]
+    },
+    {
+      "name": "matlab-functions-and-call",
+      "language": "matlab",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["matlab/main.m"],
+      "checked_kinds": ["module", "function"],
+      "checked_relations": ["contains", "calls"],
+      "exact_relations": ["contains", "calls"],
+      "expected_nodes": [
+        ["matlab/main.m", "module", "matlab/main.m"],
+        ["matlab/main.m", "function", "matlab/main.m.helper"],
+        ["matlab/main.m", "function", "matlab/main.m.start"]
+      ],
+      "expected_edges": [
+        ["contains", ["matlab/main.m", "module", "matlab/main.m"], ["matlab/main.m", "function", "matlab/main.m.helper"]],
+        ["contains", ["matlab/main.m", "module", "matlab/main.m"], ["matlab/main.m", "function", "matlab/main.m.start"]],
+        ["calls", ["matlab/main.m", "function", "matlab/main.m.start"], ["matlab/main.m", "function", "matlab/main.m.helper"]]
+      ]
+    },
+    {
+      "name": "cobol-sections-and-perform",
+      "language": "cobol",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["cobol/main.cob"],
+      "checked_kinds": ["module", "namespace", "method"],
+      "checked_relations": ["contains", "calls"],
+      "exact_relations": ["contains", "calls"],
+      "expected_nodes": [
+        ["cobol/main.cob", "module", "cobol/main.cob"],
+        ["cobol/main.cob", "namespace", "cobol/main.cob.DEMO"],
+        ["cobol/main.cob", "namespace", "cobol/main.cob.DEMO.MAIN"],
+        ["cobol/main.cob", "method", "cobol/main.cob.DEMO.MAIN.RUN"],
+        ["cobol/main.cob", "method", "cobol/main.cob.DEMO.MAIN.HELPER"]
+      ],
+      "expected_edges": [
+        ["contains", ["cobol/main.cob", "module", "cobol/main.cob"], ["cobol/main.cob", "namespace", "cobol/main.cob.DEMO"]],
+        ["contains", ["cobol/main.cob", "namespace", "cobol/main.cob.DEMO"], ["cobol/main.cob", "namespace", "cobol/main.cob.DEMO.MAIN"]],
+        ["contains", ["cobol/main.cob", "namespace", "cobol/main.cob.DEMO.MAIN"], ["cobol/main.cob", "method", "cobol/main.cob.DEMO.MAIN.RUN"]],
+        ["contains", ["cobol/main.cob", "namespace", "cobol/main.cob.DEMO.MAIN"], ["cobol/main.cob", "method", "cobol/main.cob.DEMO.MAIN.HELPER"]],
+        ["calls", ["cobol/main.cob", "method", "cobol/main.cob.DEMO.MAIN.RUN"], ["cobol/main.cob", "method", "cobol/main.cob.DEMO.MAIN.HELPER"]]
+      ]
+    },
+    {
+      "name": "fortran-module-and-call",
+      "language": "fortran",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["fortran/main.f90"],
+      "checked_kinds": ["module", "namespace", "method"],
+      "checked_relations": ["contains", "calls"],
+      "exact_relations": ["contains", "calls"],
+      "expected_nodes": [
+        ["fortran/main.f90", "module", "fortran/main.f90"],
+        ["fortran/main.f90", "namespace", "fortran/main.f90.demo"],
+        ["fortran/main.f90", "method", "fortran/main.f90.demo.helper"],
+        ["fortran/main.f90", "method", "fortran/main.f90.demo.run"]
+      ],
+      "expected_edges": [
+        ["contains", ["fortran/main.f90", "module", "fortran/main.f90"], ["fortran/main.f90", "namespace", "fortran/main.f90.demo"]],
+        ["contains", ["fortran/main.f90", "namespace", "fortran/main.f90.demo"], ["fortran/main.f90", "method", "fortran/main.f90.demo.helper"]],
+        ["contains", ["fortran/main.f90", "namespace", "fortran/main.f90.demo"], ["fortran/main.f90", "method", "fortran/main.f90.demo.run"]],
+        ["calls", ["fortran/main.f90", "method", "fortran/main.f90.demo.run"], ["fortran/main.f90", "method", "fortran/main.f90.demo.helper"]]
+      ]
+    },
+    {
+      "name": "r-functions-and-call",
+      "language": "r",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["r/main.r"],
+      "checked_kinds": ["module", "function"],
+      "checked_relations": ["contains", "calls"],
+      "exact_relations": ["contains", "calls"],
+      "expected_nodes": [
+        ["r/main.r", "module", "r/main.r"],
+        ["r/main.r", "function", "r/main.r.helper"],
+        ["r/main.r", "function", "r/main.r.start"]
+      ],
+      "expected_edges": [
+        ["contains", ["r/main.r", "module", "r/main.r"], ["r/main.r", "function", "r/main.r.helper"]],
+        ["contains", ["r/main.r", "module", "r/main.r"], ["r/main.r", "function", "r/main.r.start"]],
+        ["calls", ["r/main.r", "function", "r/main.r.start"], ["r/main.r", "function", "r/main.r.helper"]]
+      ]
+    },
+    {
+      "name": "objective-c-interface-and-implementation",
+      "language": "objective-c",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["objective-c/Worker.m"],
+      "checked_kinds": ["module", "class", "method"],
+      "checked_relations": ["contains", "calls"],
+      "exact_relations": ["contains", "calls"],
+      "expected_nodes": [
+        ["objective-c/Worker.m", "module", "objective-c/Worker.m"],
+        ["objective-c/Worker.m", "class", "objective-c/Worker.m.Worker"],
+        ["objective-c/Worker.m", "method", "objective-c/Worker.m.Worker.run"],
+        ["objective-c/Worker.m", "method", "objective-c/Worker.m.Worker.helper"]
+      ],
+      "expected_edges": [
+        ["contains", ["objective-c/Worker.m", "module", "objective-c/Worker.m"], ["objective-c/Worker.m", "class", "objective-c/Worker.m.Worker"]],
+        ["contains", ["objective-c/Worker.m", "class", "objective-c/Worker.m.Worker"], ["objective-c/Worker.m", "method", "objective-c/Worker.m.Worker.run"]],
+        ["contains", ["objective-c/Worker.m", "class", "objective-c/Worker.m.Worker"], ["objective-c/Worker.m", "method", "objective-c/Worker.m.Worker.helper"]],
+        ["calls", ["objective-c/Worker.m", "method", "objective-c/Worker.m.Worker.run"], ["objective-c/Worker.m", "method", "objective-c/Worker.m.Worker.helper"]]
+      ]
+    },
+    {
+      "name": "cuda-functions-and-call",
+      "language": "cuda",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["cuda/kernel.cu"],
+      "checked_kinds": ["module", "function"],
+      "checked_relations": ["contains", "calls"],
+      "exact_relations": ["contains", "calls"],
+      "expected_nodes": [
+        ["cuda/kernel.cu", "module", "cuda/kernel.cu"],
+        ["cuda/kernel.cu", "function", "cuda/kernel.cu.kernel"],
+        ["cuda/kernel.cu", "function", "cuda/kernel.cu.helper"],
+        ["cuda/kernel.cu", "function", "cuda/kernel.cu.main"]
+      ],
+      "expected_edges": [
+        ["contains", ["cuda/kernel.cu", "module", "cuda/kernel.cu"], ["cuda/kernel.cu", "function", "cuda/kernel.cu.kernel"]],
+        ["contains", ["cuda/kernel.cu", "module", "cuda/kernel.cu"], ["cuda/kernel.cu", "function", "cuda/kernel.cu.helper"]],
+        ["contains", ["cuda/kernel.cu", "module", "cuda/kernel.cu"], ["cuda/kernel.cu", "function", "cuda/kernel.cu.main"]],
+        ["calls", ["cuda/kernel.cu", "function", "cuda/kernel.cu.main"], ["cuda/kernel.cu", "function", "cuda/kernel.cu.helper"]]
+      ]
+    },
+    {
+      "name": "groovy-class-and-call",
+      "language": "groovy",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["groovy/Service.groovy"],
+      "checked_kinds": ["module", "namespace", "class", "method"],
+      "checked_relations": ["contains", "calls"],
+      "exact_relations": ["contains", "calls"],
+      "expected_nodes": [
+        ["groovy/Service.groovy", "module", "groovy/Service.groovy"],
+        ["groovy/Service.groovy", "namespace", "groovy/Service.groovy.demo"],
+        ["groovy/Service.groovy", "class", "groovy/Service.groovy.demo.Service"],
+        ["groovy/Service.groovy", "method", "groovy/Service.groovy.demo.Service.run"],
+        ["groovy/Service.groovy", "method", "groovy/Service.groovy.demo.Service.helper"]
+      ],
+      "expected_edges": [
+        ["contains", ["groovy/Service.groovy", "module", "groovy/Service.groovy"], ["groovy/Service.groovy", "namespace", "groovy/Service.groovy.demo"]],
+        ["contains", ["groovy/Service.groovy", "namespace", "groovy/Service.groovy.demo"], ["groovy/Service.groovy", "class", "groovy/Service.groovy.demo.Service"]],
+        ["contains", ["groovy/Service.groovy", "class", "groovy/Service.groovy.demo.Service"], ["groovy/Service.groovy", "method", "groovy/Service.groovy.demo.Service.run"]],
+        ["contains", ["groovy/Service.groovy", "class", "groovy/Service.groovy.demo.Service"], ["groovy/Service.groovy", "method", "groovy/Service.groovy.demo.Service.helper"]],
+        ["calls", ["groovy/Service.groovy", "method", "groovy/Service.groovy.demo.Service.run"], ["groovy/Service.groovy", "method", "groovy/Service.groovy.demo.Service.helper"]]
+      ]
+    },
+    {
+      "name": "fsharp-module-and-call",
+      "language": "fsharp",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["fsharp/Demo.fs"],
+      "checked_kinds": ["module", "namespace", "method"],
+      "checked_relations": ["contains", "calls"],
+      "exact_relations": ["contains", "calls"],
+      "expected_nodes": [
+        ["fsharp/Demo.fs", "module", "fsharp/Demo.fs"],
+        ["fsharp/Demo.fs", "namespace", "fsharp/Demo.fs.Demo"],
+        ["fsharp/Demo.fs", "method", "fsharp/Demo.fs.Demo.Helper"],
+        ["fsharp/Demo.fs", "method", "fsharp/Demo.fs.Demo.Start"]
+      ],
+      "expected_edges": [
+        ["contains", ["fsharp/Demo.fs", "module", "fsharp/Demo.fs"], ["fsharp/Demo.fs", "namespace", "fsharp/Demo.fs.Demo"]],
+        ["contains", ["fsharp/Demo.fs", "namespace", "fsharp/Demo.fs.Demo"], ["fsharp/Demo.fs", "method", "fsharp/Demo.fs.Demo.Helper"]],
+        ["contains", ["fsharp/Demo.fs", "namespace", "fsharp/Demo.fs.Demo"], ["fsharp/Demo.fs", "method", "fsharp/Demo.fs.Demo.Start"]],
+        ["calls", ["fsharp/Demo.fs", "method", "fsharp/Demo.fs.Demo.Start"], ["fsharp/Demo.fs", "method", "fsharp/Demo.fs.Demo.Helper"]]
+      ]
+    },
+    {
+      "name": "assembly-label-and-call",
+      "language": "assembly",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["assembly/main.asm"],
+      "checked_kinds": ["module", "function"],
+      "checked_relations": ["contains", "calls"],
+      "exact_relations": ["contains", "calls"],
+      "expected_nodes": [
+        ["assembly/main.asm", "module", "assembly/main.asm"],
+        ["assembly/main.asm", "function", "assembly/main.asm._start"],
+        ["assembly/main.asm", "function", "assembly/main.asm.helper"]
+      ],
+      "expected_edges": [
+        ["contains", ["assembly/main.asm", "module", "assembly/main.asm"], ["assembly/main.asm", "function", "assembly/main.asm._start"]],
+        ["contains", ["assembly/main.asm", "module", "assembly/main.asm"], ["assembly/main.asm", "function", "assembly/main.asm.helper"]],
+        ["calls", ["assembly/main.asm", "function", "assembly/main.asm._start"], ["assembly/main.asm", "function", "assembly/main.asm.helper"]]
+      ]
+    },
+    {
+      "name": "hcl-block-and-reference",
+      "language": "hcl",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["hcl/main.tf"],
+      "checked_kinds": ["module", "type"],
+      "checked_relations": ["contains", "references"],
+      "exact_relations": ["contains", "references"],
+      "expected_nodes": [
+        ["hcl/main.tf", "module", "hcl/main.tf"],
+        ["hcl/main.tf", "type", "hcl/main.tf.name"],
+        ["hcl/main.tf", "type", "hcl/main.tf.child"],
+        ["hcl/main.tf", "type", "hcl/main.tf.aws_instance.web"]
+      ],
+      "expected_edges": [
+        ["contains", ["hcl/main.tf", "module", "hcl/main.tf"], ["hcl/main.tf", "type", "hcl/main.tf.name"]],
+        ["contains", ["hcl/main.tf", "module", "hcl/main.tf"], ["hcl/main.tf", "type", "hcl/main.tf.child"]],
+        ["contains", ["hcl/main.tf", "module", "hcl/main.tf"], ["hcl/main.tf", "type", "hcl/main.tf.aws_instance.web"]],
+        ["references", ["hcl/main.tf", "type", "hcl/main.tf.aws_instance.web"], ["hcl/main.tf", "type", "hcl/main.tf.name"]]
+      ]
+    },
+    {
+      "name": "gdscript-class-and-call",
+      "language": "gdscript",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["gdscript/player.gd"],
+      "checked_kinds": ["module", "class", "method"],
+      "checked_relations": ["contains", "calls"],
+      "exact_relations": ["contains", "calls"],
+      "expected_nodes": [
+        ["gdscript/player.gd", "module", "gdscript/player.gd"],
+        ["gdscript/player.gd", "class", "gdscript/player.gd.Player"],
+        ["gdscript/player.gd", "method", "gdscript/player.gd.Player._ready"],
+        ["gdscript/player.gd", "method", "gdscript/player.gd.Player.helper"]
+      ],
+      "expected_edges": [
+        ["contains", ["gdscript/player.gd", "module", "gdscript/player.gd"], ["gdscript/player.gd", "class", "gdscript/player.gd.Player"]],
+        ["contains", ["gdscript/player.gd", "class", "gdscript/player.gd.Player"], ["gdscript/player.gd", "method", "gdscript/player.gd.Player._ready"]],
+        ["contains", ["gdscript/player.gd", "class", "gdscript/player.gd.Player"], ["gdscript/player.gd", "method", "gdscript/player.gd.Player.helper"]],
+        ["calls", ["gdscript/player.gd", "method", "gdscript/player.gd.Player._ready"], ["gdscript/player.gd", "method", "gdscript/player.gd.Player.helper"]]
+      ]
+    },
+    {
+      "name": "elixir-module-and-call",
+      "language": "elixir",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["elixir/demo.ex"],
+      "checked_kinds": ["module", "namespace", "method"],
+      "checked_relations": ["contains", "calls"],
+      "exact_relations": ["contains", "calls"],
+      "expected_nodes": [
+        ["elixir/demo.ex", "module", "elixir/demo.ex"],
+        ["elixir/demo.ex", "namespace", "elixir/demo.ex.Demo"],
+        ["elixir/demo.ex", "method", "elixir/demo.ex.Demo.helper"],
+        ["elixir/demo.ex", "method", "elixir/demo.ex.Demo.start"]
+      ],
+      "expected_edges": [
+        ["contains", ["elixir/demo.ex", "module", "elixir/demo.ex"], ["elixir/demo.ex", "namespace", "elixir/demo.ex.Demo"]],
+        ["contains", ["elixir/demo.ex", "namespace", "elixir/demo.ex.Demo"], ["elixir/demo.ex", "method", "elixir/demo.ex.Demo.helper"]],
+        ["contains", ["elixir/demo.ex", "namespace", "elixir/demo.ex.Demo"], ["elixir/demo.ex", "method", "elixir/demo.ex.Demo.start"]],
+        ["calls", ["elixir/demo.ex", "method", "elixir/demo.ex.Demo.start"], ["elixir/demo.ex", "method", "elixir/demo.ex.Demo.helper"]]
+      ]
+    },
+    {
+      "name": "zig-types-and-call",
+      "language": "zig",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["zig/main.zig"],
+      "checked_kinds": ["module", "type", "function"],
+      "checked_relations": ["contains", "calls"],
+      "exact_relations": ["contains", "calls"],
+      "expected_nodes": [
+        ["zig/main.zig", "module", "zig/main.zig"],
+        ["zig/main.zig", "type", "zig/main.zig.User"],
+        ["zig/main.zig", "function", "zig/main.zig.helper"],
+        ["zig/main.zig", "function", "zig/main.zig.main"]
+      ],
+      "expected_edges": [
+        ["contains", ["zig/main.zig", "module", "zig/main.zig"], ["zig/main.zig", "type", "zig/main.zig.User"]],
+        ["contains", ["zig/main.zig", "module", "zig/main.zig"], ["zig/main.zig", "function", "zig/main.zig.helper"]],
+        ["contains", ["zig/main.zig", "module", "zig/main.zig"], ["zig/main.zig", "function", "zig/main.zig.main"]],
+        ["calls", ["zig/main.zig", "function", "zig/main.zig.main"], ["zig/main.zig", "function", "zig/main.zig.helper"]]
+      ]
+    },
+    {
+      "name": "julia-module-types-and-call",
+      "language": "julia",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["julia/main.jl"],
+      "checked_kinds": ["module", "namespace", "type", "method"],
+      "checked_relations": ["contains", "calls"],
+      "exact_relations": ["contains", "calls"],
+      "expected_nodes": [
+        ["julia/main.jl", "module", "julia/main.jl"],
+        ["julia/main.jl", "namespace", "julia/main.jl.Demo"],
+        ["julia/main.jl", "type", "julia/main.jl.Demo.User"],
+        ["julia/main.jl", "method", "julia/main.jl.Demo.helper"],
+        ["julia/main.jl", "method", "julia/main.jl.Demo.start"]
+      ],
+      "expected_edges": [
+        ["contains", ["julia/main.jl", "module", "julia/main.jl"], ["julia/main.jl", "namespace", "julia/main.jl.Demo"]],
+        ["contains", ["julia/main.jl", "namespace", "julia/main.jl.Demo"], ["julia/main.jl", "type", "julia/main.jl.Demo.User"]],
+        ["contains", ["julia/main.jl", "namespace", "julia/main.jl.Demo"], ["julia/main.jl", "method", "julia/main.jl.Demo.helper"]],
+        ["contains", ["julia/main.jl", "namespace", "julia/main.jl.Demo"], ["julia/main.jl", "method", "julia/main.jl.Demo.start"]],
+        ["calls", ["julia/main.jl", "method", "julia/main.jl.Demo.start"], ["julia/main.jl", "method", "julia/main.jl.Demo.helper"]]
+      ]
+    },
+    {
+      "name": "pascal-unit-class-and-call",
+      "language": "pascal",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["pascal/demo.pas"],
+      "checked_kinds": ["module", "namespace", "class", "method"],
+      "checked_relations": ["contains", "calls"],
+      "exact_relations": ["contains", "calls"],
+      "expected_nodes": [
+        ["pascal/demo.pas", "module", "pascal/demo.pas"],
+        ["pascal/demo.pas", "namespace", "pascal/demo.pas.Demo"],
+        ["pascal/demo.pas", "class", "pascal/demo.pas.Demo.TService"],
+        ["pascal/demo.pas", "method", "pascal/demo.pas.Demo.Helper"],
+        ["pascal/demo.pas", "method", "pascal/demo.pas.Demo.TService.Run"]
+      ],
+      "expected_edges": [
+        ["contains", ["pascal/demo.pas", "module", "pascal/demo.pas"], ["pascal/demo.pas", "namespace", "pascal/demo.pas.Demo"]],
+        ["contains", ["pascal/demo.pas", "namespace", "pascal/demo.pas.Demo"], ["pascal/demo.pas", "class", "pascal/demo.pas.Demo.TService"]],
+        ["contains", ["pascal/demo.pas", "namespace", "pascal/demo.pas.Demo"], ["pascal/demo.pas", "method", "pascal/demo.pas.Demo.Helper"]],
+        ["contains", ["pascal/demo.pas", "namespace", "pascal/demo.pas.Demo"], ["pascal/demo.pas", "method", "pascal/demo.pas.Demo.TService.Run"]],
+        ["calls", ["pascal/demo.pas", "method", "pascal/demo.pas.Demo.TService.Run"], ["pascal/demo.pas", "method", "pascal/demo.pas.Demo.Helper"]]
+      ]
+    },
+    {
+      "name": "erlang-module-and-call",
+      "language": "erlang",
+      "root": "tests/completeness/corpus/extended",
+      "expected_files": ["erlang/demo.erl"],
+      "checked_kinds": ["module", "namespace", "method"],
+      "checked_relations": ["contains", "calls"],
+      "exact_relations": ["contains", "calls"],
+      "expected_nodes": [
+        ["erlang/demo.erl", "module", "erlang/demo.erl"],
+        ["erlang/demo.erl", "namespace", "erlang/demo.erl.demo"],
+        ["erlang/demo.erl", "method", "erlang/demo.erl.demo.helper"],
+        ["erlang/demo.erl", "method", "erlang/demo.erl.demo.start"]
+      ],
+      "expected_edges": [
+        ["contains", ["erlang/demo.erl", "module", "erlang/demo.erl"], ["erlang/demo.erl", "namespace", "erlang/demo.erl.demo"]],
+        ["contains", ["erlang/demo.erl", "namespace", "erlang/demo.erl.demo"], ["erlang/demo.erl", "method", "erlang/demo.erl.demo.helper"]],
+        ["contains", ["erlang/demo.erl", "namespace", "erlang/demo.erl.demo"], ["erlang/demo.erl", "method", "erlang/demo.erl.demo.start"]],
+        ["calls", ["erlang/demo.erl", "method", "erlang/demo.erl.demo.start"], ["erlang/demo.erl", "method", "erlang/demo.erl.demo.helper"]]
+      ]
+    }
+  ]
+}

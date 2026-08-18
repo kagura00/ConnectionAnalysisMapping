@@ -1,0 +1,99 @@
+{
+  "format": "connection-analysis-map",
+  "schema_version": "1.0",
+  "meta": {
+    "analyzer": {
+      "name": "example",
+      "version": "0.1.0"
+    },
+    "language": "python",
+    "target": {
+      "repository_id": "example-repository",
+      "relative_root": ".",
+      "commit_sha": null
+    },
+    "runtime": {
+      "python_version": "3.11",
+      "ast_version": "python-3.11"
+    },
+    "generated_at": null,
+    "deterministic": true,
+    "settings": {
+      "analysis": {
+        "include_tests": false
+      }
+    },
+    "counts": {
+      "nodes": 2,
+      "edges": 1,
+      "diagnostics": 0
+    }
+  },
+  "nodes": [
+    {
+      "id": "python:app.py:module",
+      "kind": "module",
+      "qualified_name": "app",
+      "display_name": "app",
+      "file": "app.py",
+      "span": {
+        "start_line": 1,
+        "start_col": 0,
+        "end_line": 4,
+        "end_col": 0
+      },
+      "parent_id": null,
+      "visibility": "public"
+    },
+    {
+      "id": "python:app.py:main:function",
+      "kind": "function",
+      "qualified_name": "main",
+      "display_name": "main",
+      "file": "app.py",
+      "span": {
+        "start_line": 1,
+        "start_col": 0,
+        "end_line": 2,
+        "end_col": 12
+      },
+      "parent_id": "python:app.py:module",
+      "visibility": "public",
+      "signature": "def main()",
+      "return_behavior": "returns_value",
+      "execution_kind": "sync",
+      "return_sites": [
+        {
+          "span": {
+            "start_line": 2,
+            "start_col": 4,
+            "end_line": 2,
+            "end_col": 12
+          },
+          "value_kind": "value"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge:example-contains",
+      "source_id": "python:app.py:module",
+      "target_id": "python:app.py:main:function",
+      "relation_type": "contains",
+      "resolution_status": "resolved",
+      "provenance": "ast",
+      "confidence": 1.0,
+      "source_span": {
+        "start_line": 1,
+        "start_col": 0,
+        "end_line": 2,
+        "end_col": 12
+      },
+      "detail": {
+        "name": "main"
+      }
+    }
+  ],
+  "diagnostics": []
+}

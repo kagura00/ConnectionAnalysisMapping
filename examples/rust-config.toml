@@ -1,0 +1,7 @@
+[analysis]
+language = "rust"
+include_tests = false
+include = ["**/*.rs"]
+exclude = [".git/**", ".connection-map/**", "target/**"]
+test_patterns = ["tests/**", "test/**", "**/*_test.rs"]
+generated = ["**/*.generated.rs", "**/*_generated.rs"]

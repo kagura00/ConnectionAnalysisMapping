@@ -1,0 +1,19 @@
+[analysis]
+language = "go"
+include_tests = false
+follow_symlinks = false
+max_file_bytes = 2000000
+include = ["**/*.go"]
+exclude = [
+  ".git/**",
+  ".connection-map/**",
+  "**/vendor/**",
+  "**/build/**",
+  "**/dist/**",
+]
+test_patterns = [
+  "**/*_test.go",
+]
+generated = [
+  "**/*.gen.go",
+]

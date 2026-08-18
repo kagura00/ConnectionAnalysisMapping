@@ -1,0 +1,33 @@
+# Connection Analysis Mapping C/C++ example
+
+[analysis]
+language = "c-family"
+languages = ["c", "cpp"]
+include_tests = false
+follow_symlinks = false
+max_file_bytes = 2000000
+include = [
+  "**/*.c",
+  "**/*.cc",
+  "**/*.cpp",
+  "**/*.cxx",
+  "**/*.c++",
+  "**/*.h",
+  "**/*.hh",
+  "**/*.hpp",
+  "**/*.hxx",
+  "**/*.h++",
+  "**/*.inc",
+  "**/*.ipp",
+  "**/*.inl",
+]
+exclude = [
+  ".git/**",
+  ".connection-map/**",
+  "**/__pycache__/**",
+  "**/build/**",
+  "**/dist/**",
+  "**/.cache/**",
+]
+test_patterns = ["tests/**", "test/**", "**/*_test.*", "**/test_*.*"]
+generated = []

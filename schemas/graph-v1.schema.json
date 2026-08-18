@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://connection-analysis-mapping.example/schema/graph-v1.json",
+  "title": "Connection Analysis Mapping graph v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schema_version", "meta", "nodes", "edges", "diagnostics"],
+  "properties": {
+    "format": { "const": "connection-analysis-map" },
+    "schema_version": { "const": "1.0" },
+    "meta": { "$ref": "#/$defs/meta" },
+    "nodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "edges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/edge" }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" }
+    }
+  },
+  "$defs": {
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start_line", "start_col", "end_line", "end_col"],
+      "properties": {
+        "start_line": { "type": "integer", "minimum": 1 },
+        "start_col": { "type": "integer", "minimum": 0 },
+        "end_line": { "type": "integer", "minimum": 1 },
+        "end_col": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "return_site": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["span", "value_kind"],
+      "properties": {
+        "span": { "$ref": "#/$defs/span" },
+        "value_kind": { "enum": ["value", "none"] }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "qualified_name", "file", "span", "parent_id", "visibility"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": ["module", "namespace", "class", "function", "method", "lambda", "interface", "type", "element", "style_rule", "external", "unknown"]
+        },
+        "qualified_name": { "type": "string", "minLength": 1 },
+        "display_name": { "type": "string" },
+        "file": { "type": ["string", "null"] },
+        "span": { "anyOf": [{ "$ref": "#/$defs/span" }, { "type": "null" }] },
+        "parent_id": { "type": ["string", "null"] },
+        "visibility": { "enum": ["public", "private", "unknown"] },
+        "signature": { "type": "string" },
+        "return_behavior": {
+          "enum": ["no_explicit_return", "returns_value", "returns_none", "mixed", "unknown"]
+        },
+        "execution_kind": {
+          "enum": ["sync", "async", "generator", "async_generator", "suspend", "unknown"]
+        },
+        "return_sites": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/return_site" }
+        },
+        "extensions": { "type": "object" }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source_id",
+        "target_id",
+        "relation_type",
+        "resolution_status",
+        "provenance",
+        "confidence",
+        "source_span",
+        "detail"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "source_id": { "type": "string", "minLength": 1 },
+        "target_id": { "type": "string", "minLength": 1 },
+        "relation_type": { "type": "string", "minLength": 1 },
+        "resolution_status": {
+          "enum": ["resolved", "external", "unresolved", "unsupported"]
+        },
+        "provenance": { "enum": ["ast", "lsp", "runtime", "manual", "unknown"] },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "source_span": {
+          "anyOf": [{ "$ref": "#/$defs/span" }, { "type": "null" }]
+        },
+        "detail": { "type": "object" },
+        "extensions": { "type": "object" }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["analyzer", "language", "target", "runtime", "generated_at", "deterministic", "settings"],
+      "properties": {
+        "analyzer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "version": { "type": "string", "minLength": 1 }
+          }
+        },
+        "language": { "type": "string", "minLength": 1 },
+        "languages": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository_id", "relative_root", "commit_sha"],
+          "properties": {
+            "repository_id": { "type": "string", "minLength": 1 },
+            "relative_root": { "type": "string" },
+            "commit_sha": { "type": ["string", "null"] }
+          }
+        },
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["python_version", "ast_version"],
+          "properties": {
+            "python_version": { "type": "string", "minLength": 1 },
+            "ast_version": { "type": "string", "minLength": 1 },
+            "parser": { "type": "string", "minLength": 1 },
+            "parser_version": { "type": "string", "minLength": 1 },
+            "grammars": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "generated_at": { "type": ["string", "null"] },
+        "deterministic": { "type": "boolean" },
+        "settings": { "type": "object" },
+        "counts": { "type": "object" },
+        "extensions": { "type": "object" }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["info", "warning", "error"] },
+        "message": { "type": "string", "minLength": 1 },
+        "file": { "type": ["string", "null"] },
+        "span": {
+          "anyOf": [{ "$ref": "#/$defs/span" }, { "type": "null" }]
+        },
+        "node_id": { "type": ["string", "null"] },
+        "edge_id": { "type": ["string", "null"] },
+        "details": { "type": "object" },
+        "extensions": { "type": "object" }
+      }
+    }
+  }
+}

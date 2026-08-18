@@ -1,0 +1,8 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. DEMO.
+       PROCEDURE DIVISION.
+       MAIN SECTION.
+       RUN.
+           PERFORM HELPER.
+       HELPER.
+           GOBACK.

@@ -1,0 +1,22 @@
+[analysis]
+language = "csharp"
+include_tests = false
+follow_symlinks = false
+max_file_bytes = 2000000
+include = ["**/*.cs"]
+exclude = [
+  ".git/**",
+  ".connection-map/**",
+  "**/bin/**",
+  "**/obj/**",
+  "**/packages/**",
+]
+test_patterns = [
+  "**/*Test.cs",
+  "**/Test*.cs",
+  "**/*Tests.cs",
+]
+generated = [
+  "**/*.g.cs",
+  "**/*.designer.cs",
+]

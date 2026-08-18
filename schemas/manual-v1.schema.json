@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://connection-analysis-mapping.example/schema/manual-v1.json",
+  "title": "Connection Analysis Mapping manual overlay v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schema_version", "analysis_schema_version", "nodes", "edges", "annotations"],
+  "properties": {
+    "format": {"const": "connection-analysis-manual"},
+    "schema_version": {"const": "1.0"},
+    "analysis_schema_version": {"const": "1.0"},
+    "analysis_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+    "nodes": {"type": "array", "items": {"$ref": "#/$defs/node"}},
+    "edges": {"type": "array", "items": {"$ref": "#/$defs/edge"}},
+    "annotations": {"type": "array", "items": {"$ref": "#/$defs/annotation"}},
+    "extensions": {"type": "object"}
+  },
+  "$defs": {
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start_line", "start_col", "end_line", "end_col"],
+      "properties": {
+        "start_line": {"type": "integer", "minimum": 1},
+        "start_col": {"type": "integer", "minimum": 0},
+        "end_line": {"type": "integer", "minimum": 1},
+        "end_col": {"type": "integer", "minimum": 0}
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "kind"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^manual:.+"},
+        "label": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["external", "unknown"]}
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source_id", "target_id", "relation_type", "resolution_status", "confidence", "source_span", "detail"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^manual:.+"},
+        "source_id": {"type": "string", "minLength": 1},
+        "target_id": {"type": "string", "minLength": 1},
+        "relation_type": {"type": "string", "minLength": 1},
+        "resolution_status": {"enum": ["resolved", "external", "unresolved", "unsupported"]},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "source_span": {"anyOf": [{"$ref": "#/$defs/span"}, {"type": "null"}]},
+        "detail": {"type": "object"}
+      }
+    },
+    "annotation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "text"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^manual:.+"},
+        "kind": {"enum": ["note", "label", "group"]},
+        "text": {"type": "string", "minLength": 1},
+        "node_id": {"type": "string", "minLength": 1},
+        "edge_id": {"type": "string", "minLength": 1},
+        "position": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y"],
+          "properties": {
+            "x": {"type": "number"},
+            "y": {"type": "number"}
+          }
+        }
+      }
+    }
+  }
+}

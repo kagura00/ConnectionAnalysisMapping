@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+artifacts/
+/release-artifacts/
+.tmp/
+.connection-map/core/
+.connection-map/backups/
+.connection-map/snapshots/
+.connection-map/web/

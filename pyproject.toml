@@ -1,0 +1,98 @@
+[build-system]
+requires = ["setuptools==84.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "connection-analysis-mapping"
+version = "0.1.0"
+description = "Static relationship analysis and local graph exploration for repositories"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+  { name = "Connection Analysis Mapping contributors" },
+]
+dependencies = []
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8,<9",
+]
+web = [
+    "tree-sitter-language-pack>=1.14.3,<1.15",
+]
+native = [
+    "tree-sitter-language-pack>=1.14.3,<1.15",
+]
+jvm = [
+    "tree-sitter-language-pack>=1.14.3,<1.15",
+]
+dotnet = [
+    "tree-sitter-language-pack>=1.14.3,<1.15",
+]
+go = [
+    "tree-sitter-language-pack>=1.14.3,<1.15",
+]
+rust = [
+    "tree-sitter-language-pack>=1.14.3,<1.15",
+]
+php = [
+    "tree-sitter-language-pack>=1.14.3,<1.15",
+]
+ruby = [
+    "tree-sitter-language-pack>=1.14.3,<1.15",
+]
+swift = [
+    "tree-sitter-language-pack>=1.14.3,<1.15",
+]
+shell = [
+    "tree-sitter-language-pack>=1.14.3,<1.15",
+]
+powershell = [
+    "tree-sitter-language-pack>=1.14.3,<1.15",
+]
+dart = [
+    "tree-sitter-language-pack>=1.14.3,<1.15",
+]
+scala = [
+    "tree-sitter-language-pack>=1.14.3,<1.15",
+]
+tree-sitter = [
+    "tree-sitter-language-pack>=1.14.3,<1.15",
+]
+visual-basic = [
+    "tree-sitter-language-pack>=1.14.3,<1.15",
+    "tree-sitter-vbnet>=0.1,<0.2; sys_platform == 'win32' and platform_machine == 'AMD64'",
+]
+sql = [
+    "sqlglot>=30.17.0,<31",
+]
+packaging = [
+    "pyinstaller>=6,<7",
+]
+lint = [
+    "ruff>=0.12,<0.13",
+]
+
+[project.scripts]
+connection-map = "connection_map.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+connection_map = ["web/*.html", "web/*.js", "web/*.css"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+extend-exclude = ["tests/fixtures", ".tmp", "dist", "release-artifacts"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
+ignore = ["BLE001"]

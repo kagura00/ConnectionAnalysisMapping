@@ -1,0 +1,50 @@
+[analysis]
+language = "kotlin"
+include_tests = false
+follow_symlinks = false
+max_file_bytes = 2000000
+include = ["**/*.kt", "**/*.kts"]
+exclude = [
+  ".git/**",
+  ".connection-map/**",
+  "**/build/**",
+  "**/.gradle/**",
+  "**/generated/**",
+  "**/*.gradle.kts",
+  "**/settings.gradle.kts",
+  "**/integration-testing/**",
+  "**/benchmarks/**",
+  "**/buildSrc/**",
+]
+test_patterns = [
+  "tests/**",
+  "test/**",
+  "**/src/test/**/*.kt",
+  "**/src/test/*.kt",
+  "**/src/test/**/*.kts",
+  "**/src/test/*.kts",
+  "**/test/**/*.kt",
+  "**/test/*.kt",
+  "**/test/**/*.kts",
+  "**/test/*.kts",
+  "**/test-utils/**",
+  "**/kotlinx-coroutines-test/**",
+  "**/commonTest/**",
+  "**/jvmTest/**",
+  "**/jsTest/**",
+  "**/nativeTest/**",
+  "**/wasmTest/**",
+  "**/wasmJs/**/test/**",
+  "**/wasmWasi/**/test/**",
+  "**/src/Test*.kt",
+  "**/*Test.kt",
+  "**/*Tests.kt",
+  "**/*Test.kts",
+  "**/*Tests.kts",
+]
+generated = [
+  "**/*.generated.kt",
+  "**/*_generated.kt",
+  "**/*.generated.kts",
+  "**/*_generated.kts",
+]

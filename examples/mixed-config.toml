@@ -1,0 +1,44 @@
+# Connection Analysis Mapping v1 mixed-language example
+
+[analysis]
+language = "mixed"
+languages = ["python", "html", "css", "javascript", "typescript"]
+include_tests = false
+follow_symlinks = false
+max_file_bytes = 2000000
+
+include = [
+  "**/*.py",
+  "**/*.html",
+  "**/*.htm",
+  "**/*.xhtml",
+  "**/*.css",
+  "**/*.js",
+  "**/*.jsx",
+  "**/*.mjs",
+  "**/*.cjs",
+  "**/*.ts",
+  "**/*.tsx",
+]
+exclude = [
+  ".git/**",
+  ".connection-map/**",
+  "**/__pycache__/**",
+  "**/.venv/**",
+  "**/venv/**",
+  "**/env/**",
+  "**/build/**",
+  "**/dist/**",
+  "**/node_modules/**",
+  "**/.next/**",
+  "**/.cache/**",
+]
+
+test_patterns = [
+  "tests/**",
+  "test/**",
+  "**/test_*.py",
+  "**/*_test.py",
+]
+
+generated = []

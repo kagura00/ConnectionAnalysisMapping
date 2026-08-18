@@ -1,0 +1,30 @@
+# Connection Analysis Mapping Web analyzer example
+
+[analysis]
+language = "web"
+languages = ["html", "css", "javascript", "typescript"]
+include_tests = false
+follow_symlinks = false
+max_file_bytes = 2000000
+include = [
+  "**/*.html",
+  "**/*.htm",
+  "**/*.css",
+  "**/*.js",
+  "**/*.jsx",
+  "**/*.mjs",
+  "**/*.cjs",
+  "**/*.ts",
+  "**/*.tsx",
+]
+exclude = [
+  ".git/**",
+  ".connection-map/**",
+  "**/node_modules/**",
+  "**/dist/**",
+  "**/build/**",
+  "**/.next/**",
+  "**/.cache/**",
+]
+test_patterns = ["tests/**", "test/**"]
+generated = []

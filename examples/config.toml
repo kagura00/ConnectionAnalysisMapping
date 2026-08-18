@@ -1,0 +1,50 @@
+# Connection Analysis Mapping v1 example
+
+[analysis]
+language = "python"
+# 複数言語のリポジトリでは language = "mixed" に変更し、PythonとWeb系を一つに統合できます。
+# languages = ["python", "html", "css", "javascript", "typescript"]
+# 対応言語をすべて解析する場合は language = "all" です。
+# Web系だけの場合は language = "web"、languages = ["html", "css", "javascript", "typescript"] です。
+include_tests = false
+follow_symlinks = false
+max_file_bytes = 2000000
+
+# Repository-relative POSIX paths. Globs are matched against these paths.
+include = [
+  "**/*.py",
+  "**/*.html",
+  "**/*.htm",
+  "**/*.xhtml",
+  "**/*.css",
+  "**/*.js",
+  "**/*.jsx",
+  "**/*.mjs",
+  "**/*.cjs",
+  "**/*.ts",
+  "**/*.tsx",
+]
+exclude = [
+  ".git/**",
+  ".connection-map/**",
+  "**/__pycache__/**",
+  "**/.venv/**",
+  "**/venv/**",
+  "**/env/**",
+  "**/build/**",
+  "**/dist/**",
+  "**/node_modules/**",
+  "**/.next/**",
+  "**/.cache/**",
+]
+
+# These are applied only when include_tests is false.
+test_patterns = [
+  "tests/**",
+  "test/**",
+  "**/test_*.py",
+  "**/*_test.py",
+]
+
+# Explicit generated-code patterns can be added per repository.
+generated = []

@@ -1,0 +1,36 @@
+[analysis]
+language = "swift"
+include_tests = false
+follow_symlinks = false
+max_file_bytes = 2000000
+include = ["**/*.swift"]
+exclude = [
+  ".git/**",
+  ".connection-map/**",
+  "**/.build/**",
+  "**/DerivedData/**",
+  "**/Pods/**",
+  "**/Carthage/**",
+  "**/SourcePackages/**",
+  "**/vendor/**",
+  "**/Generated/**",
+  "**/Benchmarks/**",
+  "**/Fixtures/**",
+  "**/Scripts/**",
+  "**/Package.swift",
+]
+test_patterns = [
+  "tests/**",
+  "test/**",
+  "Tests/**",
+  "**/Tests/**/*.swift",
+  "**/*Test.swift",
+  "**/*Tests.swift",
+  "**/*TestSupport.swift",
+]
+generated = [
+  "**/*.generated.swift",
+  "**/*_generated.swift",
+  "**/*+Generated.swift",
+  "**/*Generated.swift",
+]

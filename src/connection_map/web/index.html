@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>関係分析マップ</title>
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>関係分析マップ</h1>
+        <p id="status" class="status">解析結果を読み込んでいます…</p>
+      </div>
+      <div class="toolbar">
+        <label class="repository-selector-label" for="repository-selector">対象リポジトリ</label>
+        <select id="repository-selector" class="repository-selector" aria-label="解析対象リポジトリ" hidden></select>
+        <span id="validation-status" class="validation-status" hidden></span>
+        <span id="stats" class="stats"></span>
+        <button id="fit-view" type="button">全体を表示</button>
+        <button id="reset-view" type="button">表示をリセット</button>
+        <details id="layout-tools" class="toolbar-menu" open>
+          <summary>レイアウト</summary>
+          <div class="toolbar-menu-body">
+            <button id="save-layout" type="button">レイアウトを保存</button>
+            <button id="load-layout" type="button">レイアウトを読み込む</button>
+          </div>
+        </details>
+        <button id="toggle-details" type="button" aria-expanded="false">詳細を表示</button>
+        <input id="layout-file" type="file" accept="application/json,.json" hidden>
+      </div>
+    </header>
+
+    <main class="app-shell">
+      <aside class="side-panel left-panel" aria-label="検索と目次">
+        <label class="search-label" for="search">検索</label>
+        <input id="search" type="search" placeholder="関数・クラス・ファイル・ID" autocomplete="off">
+        <div id="search-results" class="result-list" aria-live="polite"></div>
+
+        <section class="language-filter-panel" aria-labelledby="language-filter-title">
+          <h2 id="language-filter-title">表示言語</h2>
+          <div id="language-filter" class="language-filter" role="group" aria-label="表示する開発言語"></div>
+        </section>
+
+        <details id="diagnostics-section" class="panel-section">
+          <summary id="diagnostics-summary">解析診断</summary>
+          <div id="diagnostics" class="diagnostics-list" aria-live="polite"></div>
+        </details>
+
+        <details id="toc-section" class="panel-section">
+          <summary>目次</summary>
+          <div id="toc" class="toc"></div>
+        </details>
+
+        <details id="legend-section" class="panel-section">
+          <summary>凡例</summary>
+          <div class="legend">
+            <div><span class="legend-swatch node-function"></span>関数 / メソッド</div>
+            <div><span class="legend-swatch node-class"></span>クラス</div>
+            <div><span class="legend-swatch node-module"></span>モジュール</div>
+            <div><span class="legend-swatch node-element"></span>HTML要素 / CSSルール</div>
+            <div><span class="legend-swatch node-external"></span>外部 / 未解決</div>
+            <div><span class="legend-line line-calls"></span>呼び出し</div>
+            <div><span class="legend-line line-imports"></span>読み込み</div>
+            <div><span class="legend-line line-dynamic"></span>動的読み込み</div>
+            <div><span class="legend-line line-inherits"></span>継承</div>
+            <div><span class="legend-line line-sql-reads"></span>SQL読み取り</div>
+            <div><span class="legend-line line-sql-writes"></span>SQL書き込み</div>
+          </div>
+        </details>
+      </aside>
+
+      <section class="canvas-panel" aria-label="関係グラフ">
+        <canvas id="graph" tabindex="0" aria-label="関係グラフのキャンバス"></canvas>
+        <div class="canvas-hint">ドラッグ: 移動　ホイール: 拡大縮小　クリック: 詳細　ダブルクリック: 接続拡大　Esc: 解除</div>
+      </section>
+
+      <aside id="details" class="side-panel right-panel" aria-label="選択要素の詳細">
+        <div class="details-head">
+          <h2>詳細</h2>
+          <button id="close-details" type="button">閉じる</button>
+        </div>
+        <div class="empty-details">ノードまたは線を選択すると詳細が表示されます。</div>
+      </aside>
+    </main>
+    <script src="app.js" defer></script>
+    <script src="benchmark.js" defer></script>
+  </body>
+</html>

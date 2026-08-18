@@ -1,0 +1,9 @@
+<article><?= htmlspecialchars('ready', ENT_QUOTES) ?></article>
+<?php
+namespace Demo\View;
+
+function render(): string
+{
+    $callback = fn(string $value): string => $value;
+    return $callback('ready');
+}

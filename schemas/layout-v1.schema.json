@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/connection-analysis-mapping/layout-v1.schema.json",
+  "title": "Connection Analysis Mapping Layout v1",
+  "type": "object",
+  "required": ["format", "schema_version"],
+  "properties": {
+    "format": {"const": "connection-analysis-layout"},
+    "schema_version": {"const": "1.0"},
+    "analysis_schema_version": {"const": "1.0"},
+    "camera": {
+      "type": "object",
+      "required": ["x", "y", "zoom"],
+      "properties": {
+        "x": {"type": "number"},
+        "y": {"type": "number"},
+        "zoom": {"type": "number", "exclusiveMinimum": 0}
+      },
+      "additionalProperties": true
+    },
+    "nodes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["x", "y"],
+        "properties": {
+          "x": {"type": "number"},
+          "y": {"type": "number"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "annotations": {"type": "array"}
+  },
+  "additionalProperties": true
+}

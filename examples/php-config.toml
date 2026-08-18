@@ -1,0 +1,7 @@
+[analysis]
+language = "php"
+include_tests = false
+include = ["**/*.php", "**/*.phtml"]
+exclude = [".git/**", ".connection-map/**", "vendor/**"]
+test_patterns = ["tests/**", "test/**", "**/*Test.php", "**/*TestCase.php"]
+generated = ["**/*.generated.php", "**/*_generated.php"]

@@ -1,0 +1,38 @@
+{
+  "format": "connection-analysis-manual",
+  "schema_version": "1.0",
+  "analysis_schema_version": "1.0",
+  "nodes": [
+    {
+      "id": "manual:external:redis",
+      "label": "Redis server",
+      "kind": "external"
+    }
+  ],
+  "edges": [
+    {
+      "id": "manual:edge:main-redis",
+      "source_id": "python:app.py:main:function",
+      "target_id": "manual:external:redis",
+      "relation_type": "uses",
+      "resolution_status": "external",
+      "confidence": 0.8,
+      "source_span": null,
+      "detail": {
+        "notes": "connection is configured outside the repository"
+      }
+    }
+  ],
+  "annotations": [
+    {
+      "id": "manual:annotation:redis",
+      "kind": "note",
+      "text": "運用環境の接続先",
+      "node_id": "manual:external:redis",
+      "position": {
+        "x": 600,
+        "y": 240
+      }
+    }
+  ]
+}
