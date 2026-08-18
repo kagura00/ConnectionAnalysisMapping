@@ -40,6 +40,8 @@ connection-map-portable/
 
 portable版は同梱Pythonを優先して使用する。初回解析時に`data/registry.json`が作成され、解析したリポジトリが登録される。
 
+Portable ZIPのルートには`LICENSE.txt`、`THIRD_PARTY_NOTICES.md`、`licenses/`が含まれる。同梱Pythonを使用する場合は、`THIRD_PARTY_NOTICES.md`で提供元、対象、取得元、検証済みSHA-256、ライセンス原文の配置を確認できる。追加パーサー依存はbase portable runtimeに含まれない。
+
 ## local mode
 
 local modeは、対象リポジトリへ本システムの共通CLI・解析器・Web UIを`.connection-map/`として組み込む方式。対象リポジトリと一緒に設定や解析器を管理したい場合に使う。
@@ -193,6 +195,24 @@ uv run connection-map serve \
 ```
 
 この方法で生成したデータはportable版のlauncherからも表示できる。Pythonだけならportable版のlauncherをそのまま使える。
+
+## Git管理と機密情報
+
+local modeでは、次の扱いになる。
+
+| パス | 既定の扱い | 内容 |
+| --- | --- | --- |
+| `.connection-map/config.toml` | 管理可能 | リポジトリ固有の解析設定 |
+| `.connection-map/analyzer/` | 管理可能 | リポジトリ固有の解析拡張 |
+| `.connection-map/layout/` | 内容を確認して管理 | 注釈・外部ノードを含むレイアウト |
+| `.connection-map/core/` | Git管理外 | 共通実装 |
+| `.connection-map/snapshots/` | Git管理外 | 解析結果、関数名、依存関係、診断 |
+| `.connection-map/backups/` | Git管理外 | 更新前のcore |
+| `.connection-map/web/` | Git管理外 | 表示用bundle |
+
+`layout/`と`manual-v1.json`は自動生成物ではなく、共有する場合があるため一律に除外していない。公開前に絶対パス、ユーザー名、内部構造、外部サービス名などを確認する。解析結果を意図的にGit管理する場合だけ、`.gitignore`を明示的に変更する。
+
+portable版の解析結果はportableフォルダー内の`data/`に保存され、対象リポジトリへ追加されない。`data/registry.json`にはリポジトリ切り替えのため絶対パスが保存されるため、`data/`を公開・共有しない。
 
 ## 更新方法
 

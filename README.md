@@ -50,4 +50,4 @@ portable版で追加依存が必要な言語を解析する場合は、[イン�
 
 ## ライセンス
 
-MIT Licenseです。詳細は[LICENSE](LICENSE)を参照してください。
+MIT Licenseです。詳細は[LICENSE](LICENSE)を参照してください。Portable Releaseの同梱物は、各アーカイブのルートにある`THIRD_PARTY_NOTICES.md`と`licenses/`で確認できます。ソース配布物の依存関係については[第三者通知](THIRD_PARTY_NOTICES.md)を参照してください。

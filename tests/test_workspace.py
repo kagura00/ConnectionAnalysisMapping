@@ -7,7 +7,7 @@ import pytest
 
 from connection_map import cli as cli_module
 from connection_map.analyzer import analyze_repository
-from connection_map.bundle import BundleError
+from connection_map.bundle import BundleError, split_analysis_file
 from connection_map.cli import main
 from connection_map.config import AnalysisConfig
 from connection_map.contract import canonical_sha256
@@ -41,6 +41,28 @@ def test_central_analyze_registers_repositories_and_keeps_local_mode(tmp_path: P
     monkeypatch.delenv("CONNECTION_MAP_WORKSPACE")
     assert main(["analyze", "--root", first.as_posix(), "--output", str(local_output), "--deterministic"]) == 0
     assert local_output.is_file()
+
+
+def test_analysis_and_bundle_keep_repository_paths_relative(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (repository / "main.py").write_text("def main():\n    return 1\n", encoding="utf-8")
+
+    document = analyze_repository(
+        repository,
+        AnalysisConfig(language="python"),
+        deterministic=True,
+        commit_sha="relative-path-test",
+    )
+    analysis_path = tmp_path / "analysis.json"
+    analysis_path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    bundle_path = tmp_path / "bundle"
+    split_analysis_file(analysis_path, bundle_path)
+
+    absolute_root = str(repository.resolve()).replace("\\", "/").encode("utf-8")
+    output_bytes = [analysis_path.read_bytes(), *(path.read_bytes() for path in bundle_path.rglob("*") if path.is_file())]
+    assert all(absolute_root not in payload for payload in output_bytes)
+    assert {node["file"] for node in document["nodes"] if node.get("file")} == {"main.py"}
 
 
 def test_central_cli_override_is_replayed_by_saved_configuration(tmp_path: Path, monkeypatch) -> None:

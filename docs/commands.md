@@ -216,7 +216,7 @@ uv run connection-map merge `
 uv run connection-map init --root C:\path\to\repository
 ```
 
-`--install-dir`でディレクトリ名を変更できる。既存ファイルを上書きする場合だけ`--force`を使う。
+`--install-dir`でディレクトリ名を変更できる。通常の再実行は既存ファイルを保持する。`--force`は生成用`.gitignore`と`layout/.gitkeep`だけを更新し、`config.toml`、`analyzer/`、`layout/`の利用者ファイルは保持する。すべての雛形を置き換える必要がある場合だけ、`--force --force-all`を指定する。`--force-all`は自動バックアップを作成しないため、実行前に必要なファイルを手動で保存する。
 
 ### `install-core`
 

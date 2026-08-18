@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import tarfile
 import zipfile
@@ -59,6 +60,7 @@ def test_portable_zip_separates_app_data_and_launchers(tmp_path: Path) -> None:
         "[project]\nname = 'connection-analysis-mapping'\nversion = '1.0.0'\n",
         encoding="utf-8",
     )
+    (source_root / "LICENSE").write_text("MIT License\n", encoding="utf-8")
     archive = tmp_path / "source.tar.gz"
     with tarfile.open(archive, "w:gz") as tar:
         tar.add(source_root, arcname="connection_analysis_mapping-1.0.0")
@@ -79,6 +81,9 @@ def test_portable_zip_separates_app_data_and_launchers(tmp_path: Path) -> None:
         assert "version_info >=" not in windows_launcher
         assert "-m connection_map %*" in windows_launcher
         assert "-m connection_map.cli" not in windows_launcher
+        assert "connection-map-portable/LICENSE.txt" in names
+        assert "connection-map-portable/THIRD_PARTY_NOTICES.md" in names
+        assert b"does not bundle a Python runtime" in package.read("connection-map-portable/THIRD_PARTY_NOTICES.md")
 
 
 def test_portable_zip_rejects_incomplete_source_archive(tmp_path: Path) -> None:
@@ -110,6 +115,7 @@ def test_portable_zip_embeds_runtime_and_keeps_app_replaceable(tmp_path: Path, m
         "[project]\nname = 'connection-analysis-mapping'\nversion = '1.0.0'\n",
         encoding="utf-8",
     )
+    (source_root / "LICENSE").write_text("MIT License\n", encoding="utf-8")
     archive = tmp_path / "source.tar.gz"
     with tarfile.open(archive, "w:gz") as tar:
         tar.add(source_root, arcname="connection_analysis_mapping-1.0.0")
@@ -118,6 +124,24 @@ def test_portable_zip_embeds_runtime_and_keeps_app_replaceable(tmp_path: Path, m
     runtime.mkdir()
     (runtime / "python.exe").write_bytes(b"runtime")
     (runtime / "python313._pth").write_text("python313.zip\n", encoding="utf-8")
+    (runtime / "LICENSE.txt").write_text("Python license\n", encoding="utf-8")
+    (runtime / "runtime-origin.json").write_text(
+        json.dumps(
+            {
+                "format": "connection-analysis-runtime-origin",
+                "schema_version": "1.0",
+                "provider": "test-provider",
+                "provider_release": "test-release",
+                "python_version": "3.13.15",
+                "target": "windows-amd64",
+                "source_url": "https://example.test/python.zip",
+                "archive_filename": "python.zip",
+                "archive_sha256": "a" * 64,
+                "license_files": ["LICENSE.txt"],
+            }
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.setattr(
         build_installers,
         "_find_portable_runtime",
@@ -129,6 +153,85 @@ def test_portable_zip_embeds_runtime_and_keeps_app_replaceable(tmp_path: Path, m
         names = set(package.namelist())
         assert "connection-map-portable/runtime/python.exe" in names
         assert "connection-map-portable/runtime/runtime.json" in names
+        assert "connection-map-portable/LICENSE.txt" in names
+        assert "connection-map-portable/THIRD_PARTY_NOTICES.md" in names
+        assert "connection-map-portable/licenses/runtime/LICENSE.txt" in names
         pth = package.read("connection-map-portable/runtime/python313._pth").decode("utf-8")
         assert "../app/source/src" in pth
         assert "connection-map-portable/app/source/pyproject.toml" in names
+        metadata = json.loads(package.read("connection-map-portable/runtime/runtime.json"))
+        assert metadata["origin"]["provider"] == "test-provider"
+        assert metadata["license_files"] == ["LICENSE.txt"]
+
+
+def test_portable_zip_requires_runtime_origin_metadata(tmp_path: Path, monkeypatch) -> None:
+    source_root = tmp_path / "source"
+    (source_root / "src" / "connection_map" / "web").mkdir(parents=True)
+    for name in ("__init__.py", "__main__.py", "cli.py", "installer.py"):
+        (source_root / "src" / "connection_map" / name).write_text("", encoding="utf-8")
+    (source_root / "src" / "connection_map" / "web" / "index.html").write_text("<!doctype html>", encoding="utf-8")
+    (source_root / "pyproject.toml").write_text(
+        "[project]\nname = 'connection-analysis-mapping'\nversion = '1.0.0'\n",
+        encoding="utf-8",
+    )
+    (source_root / "LICENSE").write_text("MIT License\n", encoding="utf-8")
+    archive = tmp_path / "source.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(source_root, arcname="connection_analysis_mapping-1.0.0")
+
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    (runtime / "python.exe").write_bytes(b"runtime")
+    monkeypatch.setattr(
+        build_installers,
+        "_find_portable_runtime",
+        lambda _runtime: (runtime, runtime / "python.exe", "3.13.15"),
+    )
+
+    with pytest.raises(ValueError, match="runtime origin"):
+        _write_portable_zip(archive, tmp_path, "1.0.0", runtime_dir=runtime)
+
+
+def test_portable_zip_requires_runtime_license_files(tmp_path: Path, monkeypatch) -> None:
+    source_root = tmp_path / "source"
+    (source_root / "src" / "connection_map" / "web").mkdir(parents=True)
+    for name in ("__init__.py", "__main__.py", "cli.py", "installer.py"):
+        (source_root / "src" / "connection_map" / name).write_text("", encoding="utf-8")
+    (source_root / "src" / "connection_map" / "web" / "index.html").write_text("<!doctype html>", encoding="utf-8")
+    (source_root / "pyproject.toml").write_text(
+        "[project]\nname = 'connection-analysis-mapping'\nversion = '1.0.0'\n",
+        encoding="utf-8",
+    )
+    (source_root / "LICENSE").write_text("MIT License\n", encoding="utf-8")
+    archive = tmp_path / "source.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(source_root, arcname="connection_analysis_mapping-1.0.0")
+
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    (runtime / "python.exe").write_bytes(b"runtime")
+    (runtime / "runtime-origin.json").write_text(
+        json.dumps(
+            {
+                "format": "connection-analysis-runtime-origin",
+                "schema_version": "1.0",
+                "provider": "test-provider",
+                "provider_release": "test-release",
+                "python_version": "3.13.15",
+                "target": "windows-amd64",
+                "source_url": "https://example.test/python.zip",
+                "archive_filename": "python.zip",
+                "archive_sha256": "a" * 64,
+                "license_files": ["LICENSE.txt"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        build_installers,
+        "_find_portable_runtime",
+        lambda _runtime: (runtime, runtime / "python.exe", "3.13.15"),
+    )
+
+    with pytest.raises(ValueError, match="license file is missing"):
+        _write_portable_zip(archive, tmp_path, "1.0.0", runtime_dir=runtime)

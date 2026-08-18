@@ -15,6 +15,12 @@ import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from urllib.parse import urlsplit
+
+try:
+    from scripts.third_party_notices import find_license_files, write_runtime_origin
+except ModuleNotFoundError:  # Executed directly as scripts/fetch_python_runtime.py.
+    from third_party_notices import find_license_files, write_runtime_origin
 
 RUNTIMES = {
     ("3.13.15", "amd64"): {
@@ -257,6 +263,26 @@ def main() -> int:
                 raise ValueError("python-build-standalone archive must contain one runtime directory")
             source = children[0]
             _prune_standalone_runtime(source)
+        license_files = find_license_files(source)
+        if not license_files:
+            raise ValueError(
+                f"Python runtime archive contains no recognizable license or notice files: {url}"
+            )
+        write_runtime_origin(
+            source / "runtime-origin.json",
+            {
+                "format": "connection-analysis-runtime-origin",
+                "schema_version": "1.0",
+                "provider": args.provider,
+                "provider_release": STANDALONE_RELEASE if args.provider == "python-build-standalone" else args.version,
+                "python_version": args.version,
+                "target": args.target,
+                "source_url": url,
+                "archive_filename": Path(urlsplit(url).path).name,
+                "archive_sha256": digest,
+                "license_files": list(license_files),
+            },
+        )
         # GitHub-hosted Windows runners can place TemporaryDirectory and the
         # workspace on different volumes.  shutil.move uses rename when
         # possible and falls back to a directory copy across volumes.

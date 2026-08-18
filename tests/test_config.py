@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -54,6 +56,45 @@ def test_custom_scaffold_directory_contains_its_own_generated_data_ignore(tmp_pa
     assert (tmp_path / "analysis-tool" / ".gitignore").read_text(encoding="utf-8") == (
         "core/\nbackups/\nsnapshots/\nweb/\n"
     )
+
+
+def test_scaffold_gitignore_behaves_in_a_real_git_repository(tmp_path: Path) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    root_gitignore = tmp_path / ".gitignore"
+    root_gitignore.write_text("keep-root-rule\n", encoding="utf-8")
+    initialize_target(tmp_path)
+    generated = {
+        ".connection-map/core/example.py",
+        ".connection-map/backups/backup.tar",
+        ".connection-map/snapshots/analysis.json",
+        ".connection-map/snapshots/graph-bundle/chunk.json",
+        ".connection-map/web/index.html",
+    }
+    for relative in generated:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("generated\n", encoding="utf-8")
+
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    managed = {
+        ".connection-map/.gitignore",
+        ".connection-map/README.md",
+        ".connection-map/config.toml",
+        ".connection-map/analyzer/run.py",
+        ".connection-map/layout/README.md",
+        ".connection-map/layout/manual-v1.json",
+    }
+    assert all(relative not in status for relative in generated)
+    assert all(relative in status for relative in managed)
+    assert root_gitignore.read_text(encoding="utf-8") == "keep-root-rule\n"
 
 
 def test_max_file_bytes_rejects_boolean_values() -> None:
@@ -125,9 +166,32 @@ def test_scaffold_force_does_not_follow_child_symlinks(tmp_path: Path) -> None:
         pytest.skip(f"symlink creation is unavailable: {exc}")
 
     with pytest.raises(ValueError, match="symlink"):
-        initialize_target(tmp_path, force=True)
+        initialize_target(tmp_path, force=True, force_all=True)
 
     assert outside.read_text(encoding="utf-8") == "keep\n"
+
+
+def test_scaffold_force_refreshes_only_generated_control_files(tmp_path: Path) -> None:
+    initialize_target(tmp_path)
+    base = tmp_path / ".connection-map"
+    config = base / "config.toml"
+    analyzer = base / "analyzer" / "run.py"
+    manual = base / "layout" / "manual-v1.json"
+    root_ignore = base / ".gitignore"
+    snapshots_ignore = base / "snapshots" / ".gitignore"
+    config.write_text("user-config\n", encoding="utf-8")
+    analyzer.write_text("user-analyzer\n", encoding="utf-8")
+    manual.write_text("user-manual\n", encoding="utf-8")
+    root_ignore.write_text(root_ignore.read_text(encoding="utf-8") + "user-rule\n", encoding="utf-8")
+    snapshots_ignore.write_text("custom-snapshot-rule\n", encoding="utf-8")
+
+    initialize_target(tmp_path, force=True)
+
+    assert config.read_text(encoding="utf-8") == "user-config\n"
+    assert analyzer.read_text(encoding="utf-8") == "user-analyzer\n"
+    assert manual.read_text(encoding="utf-8") == "user-manual\n"
+    assert "user-rule\n" in root_ignore.read_text(encoding="utf-8")
+    assert snapshots_ignore.read_text(encoding="utf-8") == "*\n!.gitignore\n"
 
 
 def test_sql_and_shell_presets_accept_explicit_languages() -> None:
