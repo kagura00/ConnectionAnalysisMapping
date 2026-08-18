@@ -257,7 +257,10 @@ def main() -> int:
                 raise ValueError("python-build-standalone archive must contain one runtime directory")
             source = children[0]
             _prune_standalone_runtime(source)
-        source.rename(output)
+        # GitHub-hosted Windows runners can place TemporaryDirectory and the
+        # workspace on different volumes.  shutil.move uses rename when
+        # possible and falls back to a directory copy across volumes.
+        shutil.move(str(source), str(output))
     print(f"extracted Python {args.version} {args.target} runtime to {output}")
     return 0
 
