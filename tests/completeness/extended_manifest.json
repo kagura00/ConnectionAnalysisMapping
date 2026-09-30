@@ -21,7 +21,9 @@
         ["contains", ["vbnet/Program.vb", "module", "vbnet/Program.vb"], ["vbnet/Program.vb", "namespace", "vbnet/Program.vb.Demo"]],
         ["contains", ["vbnet/Program.vb", "namespace", "vbnet/Program.vb.Demo"], ["vbnet/Program.vb", "class", "vbnet/Program.vb.Demo.Service"]],
         ["contains", ["vbnet/Program.vb", "class", "vbnet/Program.vb.Demo.Service"], ["vbnet/Program.vb", "method", "vbnet/Program.vb.Demo.Service.Run"]],
-        ["contains", ["vbnet/Program.vb", "class", "vbnet/Program.vb.Demo.Service"], ["vbnet/Program.vb", "method", "vbnet/Program.vb.Demo.Service.Helper"]],
+        ["contains", ["vbnet/Program.vb", "class", "vbnet/Program.vb.Demo.Service"], ["vbnet/Program.vb", "method", "vbnet/Program.vb.Demo.Service.Helper"]]
+      ],
+      "expected_candidate_edges": [
         ["calls", ["vbnet/Program.vb", "method", "vbnet/Program.vb.Demo.Service.Run"], ["vbnet/Program.vb", "method", "vbnet/Program.vb.Demo.Service.Helper"]]
       ]
     },
@@ -60,7 +62,9 @@
       ],
       "expected_edges": [
         ["contains", ["lua/app.lua", "module", "lua/app.lua"], ["lua/app.lua", "function", "lua/app.lua.M.run"]],
-        ["contains", ["lua/app.lua", "module", "lua/app.lua"], ["lua/app.lua", "function", "lua/app.lua.helper"]],
+        ["contains", ["lua/app.lua", "module", "lua/app.lua"], ["lua/app.lua", "function", "lua/app.lua.helper"]]
+      ],
+      "expected_candidate_edges": [
         ["calls", ["lua/app.lua", "function", "lua/app.lua.M.run"], ["lua/app.lua", "function", "lua/app.lua.helper"]]
       ]
     },
@@ -99,7 +103,9 @@
       "expected_edges": [
         ["contains", ["perl/main.pl", "module", "perl/main.pl"], ["perl/main.pl", "namespace", "perl/main.pl.Demo"]],
         ["contains", ["perl/main.pl", "namespace", "perl/main.pl.Demo"], ["perl/main.pl", "method", "perl/main.pl.Demo.helper"]],
-        ["contains", ["perl/main.pl", "module", "perl/main.pl"], ["perl/main.pl", "function", "perl/main.pl.start"]],
+        ["contains", ["perl/main.pl", "module", "perl/main.pl"], ["perl/main.pl", "function", "perl/main.pl.start"]]
+      ],
+      "expected_candidate_edges": [
         ["calls", ["perl/main.pl", "function", "perl/main.pl.start"], ["perl/main.pl", "method", "perl/main.pl.Demo.helper"]]
       ]
     },
@@ -118,7 +124,9 @@
       ],
       "expected_edges": [
         ["contains", ["matlab/main.m", "module", "matlab/main.m"], ["matlab/main.m", "function", "matlab/main.m.helper"]],
-        ["contains", ["matlab/main.m", "module", "matlab/main.m"], ["matlab/main.m", "function", "matlab/main.m.start"]],
+        ["contains", ["matlab/main.m", "module", "matlab/main.m"], ["matlab/main.m", "function", "matlab/main.m.start"]]
+      ],
+      "expected_candidate_edges": [
         ["calls", ["matlab/main.m", "function", "matlab/main.m.start"], ["matlab/main.m", "function", "matlab/main.m.helper"]]
       ]
     },
@@ -141,7 +149,9 @@
         ["contains", ["cobol/main.cob", "module", "cobol/main.cob"], ["cobol/main.cob", "namespace", "cobol/main.cob.DEMO"]],
         ["contains", ["cobol/main.cob", "namespace", "cobol/main.cob.DEMO"], ["cobol/main.cob", "namespace", "cobol/main.cob.DEMO.MAIN"]],
         ["contains", ["cobol/main.cob", "namespace", "cobol/main.cob.DEMO.MAIN"], ["cobol/main.cob", "method", "cobol/main.cob.DEMO.MAIN.RUN"]],
-        ["contains", ["cobol/main.cob", "namespace", "cobol/main.cob.DEMO.MAIN"], ["cobol/main.cob", "method", "cobol/main.cob.DEMO.MAIN.HELPER"]],
+        ["contains", ["cobol/main.cob", "namespace", "cobol/main.cob.DEMO.MAIN"], ["cobol/main.cob", "method", "cobol/main.cob.DEMO.MAIN.HELPER"]]
+      ],
+      "expected_candidate_edges": [
         ["calls", ["cobol/main.cob", "method", "cobol/main.cob.DEMO.MAIN.RUN"], ["cobol/main.cob", "method", "cobol/main.cob.DEMO.MAIN.HELPER"]]
       ]
     },
@@ -162,7 +172,9 @@
       "expected_edges": [
         ["contains", ["fortran/main.f90", "module", "fortran/main.f90"], ["fortran/main.f90", "namespace", "fortran/main.f90.demo"]],
         ["contains", ["fortran/main.f90", "namespace", "fortran/main.f90.demo"], ["fortran/main.f90", "method", "fortran/main.f90.demo.helper"]],
-        ["contains", ["fortran/main.f90", "namespace", "fortran/main.f90.demo"], ["fortran/main.f90", "method", "fortran/main.f90.demo.run"]],
+        ["contains", ["fortran/main.f90", "namespace", "fortran/main.f90.demo"], ["fortran/main.f90", "method", "fortran/main.f90.demo.run"]]
+      ],
+      "expected_candidate_edges": [
         ["calls", ["fortran/main.f90", "method", "fortran/main.f90.demo.run"], ["fortran/main.f90", "method", "fortran/main.f90.demo.helper"]]
       ]
     },
@@ -181,7 +193,9 @@
       ],
       "expected_edges": [
         ["contains", ["r/main.r", "module", "r/main.r"], ["r/main.r", "function", "r/main.r.helper"]],
-        ["contains", ["r/main.r", "module", "r/main.r"], ["r/main.r", "function", "r/main.r.start"]],
+        ["contains", ["r/main.r", "module", "r/main.r"], ["r/main.r", "function", "r/main.r.start"]]
+      ],
+      "expected_candidate_edges": [
         ["calls", ["r/main.r", "function", "r/main.r.start"], ["r/main.r", "function", "r/main.r.helper"]]
       ]
     },
@@ -202,7 +216,9 @@
       "expected_edges": [
         ["contains", ["objective-c/Worker.m", "module", "objective-c/Worker.m"], ["objective-c/Worker.m", "class", "objective-c/Worker.m.Worker"]],
         ["contains", ["objective-c/Worker.m", "class", "objective-c/Worker.m.Worker"], ["objective-c/Worker.m", "method", "objective-c/Worker.m.Worker.run"]],
-        ["contains", ["objective-c/Worker.m", "class", "objective-c/Worker.m.Worker"], ["objective-c/Worker.m", "method", "objective-c/Worker.m.Worker.helper"]],
+        ["contains", ["objective-c/Worker.m", "class", "objective-c/Worker.m.Worker"], ["objective-c/Worker.m", "method", "objective-c/Worker.m.Worker.helper"]]
+      ],
+      "expected_candidate_edges": [
         ["calls", ["objective-c/Worker.m", "method", "objective-c/Worker.m.Worker.run"], ["objective-c/Worker.m", "method", "objective-c/Worker.m.Worker.helper"]]
       ]
     },
@@ -223,7 +239,9 @@
       "expected_edges": [
         ["contains", ["cuda/kernel.cu", "module", "cuda/kernel.cu"], ["cuda/kernel.cu", "function", "cuda/kernel.cu.kernel"]],
         ["contains", ["cuda/kernel.cu", "module", "cuda/kernel.cu"], ["cuda/kernel.cu", "function", "cuda/kernel.cu.helper"]],
-        ["contains", ["cuda/kernel.cu", "module", "cuda/kernel.cu"], ["cuda/kernel.cu", "function", "cuda/kernel.cu.main"]],
+        ["contains", ["cuda/kernel.cu", "module", "cuda/kernel.cu"], ["cuda/kernel.cu", "function", "cuda/kernel.cu.main"]]
+      ],
+      "expected_candidate_edges": [
         ["calls", ["cuda/kernel.cu", "function", "cuda/kernel.cu.main"], ["cuda/kernel.cu", "function", "cuda/kernel.cu.helper"]]
       ]
     },
@@ -246,7 +264,9 @@
         ["contains", ["groovy/Service.groovy", "module", "groovy/Service.groovy"], ["groovy/Service.groovy", "namespace", "groovy/Service.groovy.demo"]],
         ["contains", ["groovy/Service.groovy", "namespace", "groovy/Service.groovy.demo"], ["groovy/Service.groovy", "class", "groovy/Service.groovy.demo.Service"]],
         ["contains", ["groovy/Service.groovy", "class", "groovy/Service.groovy.demo.Service"], ["groovy/Service.groovy", "method", "groovy/Service.groovy.demo.Service.run"]],
-        ["contains", ["groovy/Service.groovy", "class", "groovy/Service.groovy.demo.Service"], ["groovy/Service.groovy", "method", "groovy/Service.groovy.demo.Service.helper"]],
+        ["contains", ["groovy/Service.groovy", "class", "groovy/Service.groovy.demo.Service"], ["groovy/Service.groovy", "method", "groovy/Service.groovy.demo.Service.helper"]]
+      ],
+      "expected_candidate_edges": [
         ["calls", ["groovy/Service.groovy", "method", "groovy/Service.groovy.demo.Service.run"], ["groovy/Service.groovy", "method", "groovy/Service.groovy.demo.Service.helper"]]
       ]
     },
@@ -267,7 +287,9 @@
       "expected_edges": [
         ["contains", ["fsharp/Demo.fs", "module", "fsharp/Demo.fs"], ["fsharp/Demo.fs", "namespace", "fsharp/Demo.fs.Demo"]],
         ["contains", ["fsharp/Demo.fs", "namespace", "fsharp/Demo.fs.Demo"], ["fsharp/Demo.fs", "method", "fsharp/Demo.fs.Demo.Helper"]],
-        ["contains", ["fsharp/Demo.fs", "namespace", "fsharp/Demo.fs.Demo"], ["fsharp/Demo.fs", "method", "fsharp/Demo.fs.Demo.Start"]],
+        ["contains", ["fsharp/Demo.fs", "namespace", "fsharp/Demo.fs.Demo"], ["fsharp/Demo.fs", "method", "fsharp/Demo.fs.Demo.Start"]]
+      ],
+      "expected_candidate_edges": [
         ["calls", ["fsharp/Demo.fs", "method", "fsharp/Demo.fs.Demo.Start"], ["fsharp/Demo.fs", "method", "fsharp/Demo.fs.Demo.Helper"]]
       ]
     },
@@ -286,7 +308,9 @@
       ],
       "expected_edges": [
         ["contains", ["assembly/main.asm", "module", "assembly/main.asm"], ["assembly/main.asm", "function", "assembly/main.asm._start"]],
-        ["contains", ["assembly/main.asm", "module", "assembly/main.asm"], ["assembly/main.asm", "function", "assembly/main.asm.helper"]],
+        ["contains", ["assembly/main.asm", "module", "assembly/main.asm"], ["assembly/main.asm", "function", "assembly/main.asm.helper"]]
+      ],
+      "expected_candidate_edges": [
         ["calls", ["assembly/main.asm", "function", "assembly/main.asm._start"], ["assembly/main.asm", "function", "assembly/main.asm.helper"]]
       ]
     },
@@ -328,7 +352,9 @@
       "expected_edges": [
         ["contains", ["gdscript/player.gd", "module", "gdscript/player.gd"], ["gdscript/player.gd", "class", "gdscript/player.gd.Player"]],
         ["contains", ["gdscript/player.gd", "class", "gdscript/player.gd.Player"], ["gdscript/player.gd", "method", "gdscript/player.gd.Player._ready"]],
-        ["contains", ["gdscript/player.gd", "class", "gdscript/player.gd.Player"], ["gdscript/player.gd", "method", "gdscript/player.gd.Player.helper"]],
+        ["contains", ["gdscript/player.gd", "class", "gdscript/player.gd.Player"], ["gdscript/player.gd", "method", "gdscript/player.gd.Player.helper"]]
+      ],
+      "expected_candidate_edges": [
         ["calls", ["gdscript/player.gd", "method", "gdscript/player.gd.Player._ready"], ["gdscript/player.gd", "method", "gdscript/player.gd.Player.helper"]]
       ]
     },
@@ -349,7 +375,9 @@
       "expected_edges": [
         ["contains", ["elixir/demo.ex", "module", "elixir/demo.ex"], ["elixir/demo.ex", "namespace", "elixir/demo.ex.Demo"]],
         ["contains", ["elixir/demo.ex", "namespace", "elixir/demo.ex.Demo"], ["elixir/demo.ex", "method", "elixir/demo.ex.Demo.helper"]],
-        ["contains", ["elixir/demo.ex", "namespace", "elixir/demo.ex.Demo"], ["elixir/demo.ex", "method", "elixir/demo.ex.Demo.start"]],
+        ["contains", ["elixir/demo.ex", "namespace", "elixir/demo.ex.Demo"], ["elixir/demo.ex", "method", "elixir/demo.ex.Demo.start"]]
+      ],
+      "expected_candidate_edges": [
         ["calls", ["elixir/demo.ex", "method", "elixir/demo.ex.Demo.start"], ["elixir/demo.ex", "method", "elixir/demo.ex.Demo.helper"]]
       ]
     },
@@ -370,7 +398,9 @@
       "expected_edges": [
         ["contains", ["zig/main.zig", "module", "zig/main.zig"], ["zig/main.zig", "type", "zig/main.zig.User"]],
         ["contains", ["zig/main.zig", "module", "zig/main.zig"], ["zig/main.zig", "function", "zig/main.zig.helper"]],
-        ["contains", ["zig/main.zig", "module", "zig/main.zig"], ["zig/main.zig", "function", "zig/main.zig.main"]],
+        ["contains", ["zig/main.zig", "module", "zig/main.zig"], ["zig/main.zig", "function", "zig/main.zig.main"]]
+      ],
+      "expected_candidate_edges": [
         ["calls", ["zig/main.zig", "function", "zig/main.zig.main"], ["zig/main.zig", "function", "zig/main.zig.helper"]]
       ]
     },
@@ -393,7 +423,9 @@
         ["contains", ["julia/main.jl", "module", "julia/main.jl"], ["julia/main.jl", "namespace", "julia/main.jl.Demo"]],
         ["contains", ["julia/main.jl", "namespace", "julia/main.jl.Demo"], ["julia/main.jl", "type", "julia/main.jl.Demo.User"]],
         ["contains", ["julia/main.jl", "namespace", "julia/main.jl.Demo"], ["julia/main.jl", "method", "julia/main.jl.Demo.helper"]],
-        ["contains", ["julia/main.jl", "namespace", "julia/main.jl.Demo"], ["julia/main.jl", "method", "julia/main.jl.Demo.start"]],
+        ["contains", ["julia/main.jl", "namespace", "julia/main.jl.Demo"], ["julia/main.jl", "method", "julia/main.jl.Demo.start"]]
+      ],
+      "expected_candidate_edges": [
         ["calls", ["julia/main.jl", "method", "julia/main.jl.Demo.start"], ["julia/main.jl", "method", "julia/main.jl.Demo.helper"]]
       ]
     },
@@ -416,7 +448,9 @@
         ["contains", ["pascal/demo.pas", "module", "pascal/demo.pas"], ["pascal/demo.pas", "namespace", "pascal/demo.pas.Demo"]],
         ["contains", ["pascal/demo.pas", "namespace", "pascal/demo.pas.Demo"], ["pascal/demo.pas", "class", "pascal/demo.pas.Demo.TService"]],
         ["contains", ["pascal/demo.pas", "namespace", "pascal/demo.pas.Demo"], ["pascal/demo.pas", "method", "pascal/demo.pas.Demo.Helper"]],
-        ["contains", ["pascal/demo.pas", "namespace", "pascal/demo.pas.Demo"], ["pascal/demo.pas", "method", "pascal/demo.pas.Demo.TService.Run"]],
+        ["contains", ["pascal/demo.pas", "namespace", "pascal/demo.pas.Demo"], ["pascal/demo.pas", "method", "pascal/demo.pas.Demo.TService.Run"]]
+      ],
+      "expected_candidate_edges": [
         ["calls", ["pascal/demo.pas", "method", "pascal/demo.pas.Demo.TService.Run"], ["pascal/demo.pas", "method", "pascal/demo.pas.Demo.Helper"]]
       ]
     },
@@ -437,7 +471,9 @@
       "expected_edges": [
         ["contains", ["erlang/demo.erl", "module", "erlang/demo.erl"], ["erlang/demo.erl", "namespace", "erlang/demo.erl.demo"]],
         ["contains", ["erlang/demo.erl", "namespace", "erlang/demo.erl.demo"], ["erlang/demo.erl", "method", "erlang/demo.erl.demo.helper"]],
-        ["contains", ["erlang/demo.erl", "namespace", "erlang/demo.erl.demo"], ["erlang/demo.erl", "method", "erlang/demo.erl.demo.start"]],
+        ["contains", ["erlang/demo.erl", "namespace", "erlang/demo.erl.demo"], ["erlang/demo.erl", "method", "erlang/demo.erl.demo.start"]]
+      ],
+      "expected_candidate_edges": [
         ["calls", ["erlang/demo.erl", "method", "erlang/demo.erl.demo.start"], ["erlang/demo.erl", "method", "erlang/demo.erl.demo.helper"]]
       ]
     }

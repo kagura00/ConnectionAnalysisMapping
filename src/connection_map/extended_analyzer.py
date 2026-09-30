@@ -846,7 +846,14 @@ def _collect_calls(
         source = _scope_for_offset(declarations, match.start(), "", item.language)
         source_id = source.node_id if source and source.node_id else item.module_id
         target = _resolve_symbol(symbols, item.language, name)
-        status = "resolved" if target and target.node_id else "unresolved"
+        # A unique spelling is only a candidate: lexical profiles do not
+        # establish imports, receiver types, or parameter/local bindings.
+        # Never present these edges as semantically resolved to a consumer.
+        if target and target.file_path != item.relative_path:
+            target = None
+        if item.language == "lua" and _lua_name_may_be_shadowed(item, source, name, match.start()):
+            target = None
+        status = "unresolved"
         target_id = target.node_id if target and target.node_id else external_node(
             builder,
             external_cache,
@@ -862,9 +869,11 @@ def _collect_calls(
             target_id=target_id,
             relation_type="calls",
             source_span=_span(item.text, match.start(), match.end()),
-            detail={"expression": f"{name}(...)", "call_kind": "direct"},
+            detail={"expression": f"{name}(...)", "call_kind": "direct",
+                    "resolution_basis": "lexical_name_candidate" if target else "binding_not_established",
+                    "candidate_target_id": target_id if target else None},
             resolution_status=status,
-            confidence=0.9 if status == "resolved" else 0.4,
+            confidence=0.4 if target else 0.2,
             edge_prefix=f"extended-{item.language}",
             provenance="unknown",
         )
@@ -1158,6 +1167,21 @@ def _scope_for_offset(
 
 def _symbol_key(language: str, name: str) -> str:
     return name.casefold() if language in {"vbnet", "vba", "fortran", "pascal", "cobol"} else name
+
+
+def _lua_name_may_be_shadowed(item: ExtendedFile, source: Declaration | None, name: str, offset: int) -> bool:
+    # This is a negative filter, not a general Lua binding resolver. Any
+    # parameter/local/assignment using the base name suppresses the candidate.
+    base = re.split(r"[.:]", name)[0]
+    escaped = re.escape(base)
+    prefix = item.code_text[:offset]
+    # Profiles can lose the owner at unindented statements. Include preceding
+    # function headers conservatively rather than trusting that scope guess.
+    for parameters in re.finditer(r"\bfunction(?:\s+[\w.:]+)?\s*\(([^)]*)\)", prefix):
+        if re.search(rf"\b{escaped}\b", parameters.group(1)):
+            return True
+    return bool(re.search(rf"\blocal\s+(?:function\s+)?[^\n;=]*\b{escaped}\b", prefix)
+                or re.search(rf"\b{escaped}\s*=(?!=)", prefix))
 
 
 def _resolve_symbol(

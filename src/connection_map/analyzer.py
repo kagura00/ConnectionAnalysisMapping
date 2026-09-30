@@ -6,6 +6,7 @@ import importlib
 from pathlib import Path
 
 from .config import AnalysisConfig, ensure_repository_root
+from .evidence import attach_evidence, capture_sources
 from .language_registry import analyzer_for_language
 
 
@@ -32,4 +33,7 @@ def analyze_repository(
     analyze = getattr(module, "analyze_repository", None)
     if analyze is None:
         raise ValueError(f"analyzer module {analyzer_name!r} has no analyze_repository function")
-    return analyze(root, active_config, deterministic=deterministic, commit_sha=commit_sha)
+    before = capture_sources(root, active_config)
+    document = analyze(root, active_config, deterministic=deterministic, commit_sha=commit_sha)
+    attach_evidence(document, before, capture_sources(root, active_config))
+    return document

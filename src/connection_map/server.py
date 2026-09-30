@@ -6,15 +6,17 @@ import hashlib
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from functools import partial
+from functools import lru_cache, partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, ClassVar
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from .bundle import BundleError, quick_validate_bundle, validate_bundle
 from .contract import ContractError, canonical_sha256, validate_document
+from .evidence import check_freshness, coverage_summary
 from .layout import LayoutError, load_layout
+from .query import GraphQuery
 from .workspace import RepositoryRecord, Workspace, WorkspaceError
 
 
@@ -29,7 +31,70 @@ def _content_matches(content: bytes, expected_sha256: str | None, *, canonical_j
     return hashlib.sha256(content).hexdigest() == expected_sha256
 
 
-class AnalysisRequestHandler(SimpleHTTPRequestHandler):
+@lru_cache(maxsize=2)
+def _cached_query(content: bytes, expected_sha256: str) -> GraphQuery:
+    document = json.loads(content)
+    if canonical_sha256(document) != expected_sha256:
+        raise ValueError("analysis JSON failed its integrity check")
+    return GraphQuery(document)
+
+
+class QueryRequestMixin:
+    """The root comes only from server configuration, never request parameters."""
+
+    def _serve_query(
+        self, path: Path, digest: str | None, root: Path | None, *,
+        quality: bool = False, diagnostics: bool = False,
+    ) -> None:
+        if not digest:
+            self.send_error(404, "analysis JSON is unavailable")
+            return
+        try:
+            query = _cached_query(path.read_bytes(), digest)
+        except (OSError, ValueError, UnicodeError):
+            self.send_error(409, "analysis JSON failed its integrity check")
+            return
+        try:
+            if quality:
+                payload = {"analysis_sha256": query.sha256, "coverage": coverage_summary(query.document),
+                           "freshness": check_freshness(query.document, root)}
+            else:
+                params = parse_qs(urlsplit(self.path).query, keep_blank_values=True, max_num_fields=30)
+                allowed = {"severity", "file", "offset", "limit"} if diagnostics else {
+                    "node", "direction", "relation", "resolution", "depth", "max_nodes", "max_edges",
+                }
+                if set(params) - allowed:
+                    raise ValueError("unknown query parameter")
+                if any(len(values) != 1 for name, values in params.items() if name != "relation"):
+                    raise ValueError("duplicate query parameter")
+                if diagnostics:
+                    payload = query.diagnostics_page(
+                        severity=params.get("severity", ["all"])[0], file=params.get("file", [""])[0],
+                        offset=int(params.get("offset", ["0"])[0]), limit=int(params.get("limit", ["200"])[0]),
+                    )
+                else:
+                    payload = query.neighborhood(
+                        params.get("node", [""])[0], direction=params.get("direction", ["both"])[0],
+                        relations=params.get("relation"), resolution=params.get("resolution", ["all"])[0],
+                        depth=int(params.get("depth", ["1"])[0]), max_nodes=int(params.get("max_nodes", ["60"])[0]),
+                        max_edges=int(params.get("max_edges", ["120"])[0]), root=root,
+                    )
+        except (ValueError, TypeError) as exc:
+            self.send_error(400, str(exc))
+            return
+        self._serve_json(payload)
+
+    def _serve_json(self, payload: Any) -> None:
+        content = (json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(content)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(content)
+
+
+class AnalysisRequestHandler(QueryRequestMixin, SimpleHTTPRequestHandler):
     """Serve packaged assets and optional graph, layout, and bundle JSON files."""
 
     analysis_path: Path
@@ -39,9 +104,14 @@ class AnalysisRequestHandler(SimpleHTTPRequestHandler):
     bundle_hashes: ClassVar[dict[str, str]] = {}
     analysis_sha256: str = ""
     layout_sha256: str | None = None
+    source_root: Path | None = None
 
     def do_GET(self) -> None:
         request_path = self.path.split("?", 1)[0]
+        if request_path in {"/context", "/quality", "/diagnostics"}:
+            self._serve_query(self.analysis_path, self.analysis_sha256, self.source_root,
+                              quality=request_path == "/quality", diagnostics=request_path == "/diagnostics")
+            return
         if request_path == "/analysis.json":
             self._serve_analysis()
             return
@@ -121,7 +191,7 @@ class AnalysisRequestHandler(SimpleHTTPRequestHandler):
         return
 
 
-class WorkspaceRequestHandler(SimpleHTTPRequestHandler):
+class WorkspaceRequestHandler(QueryRequestMixin, SimpleHTTPRequestHandler):
     """Serve a registered repository catalog and repository-scoped data."""
 
     workspace: Workspace
@@ -178,6 +248,16 @@ class WorkspaceRequestHandler(SimpleHTTPRequestHandler):
             return
         with self.validation_lock:
             validation = self.validation_states.get(repository_id, {"status": record.validation_status})
+        if resource in {"context", "quality", "diagnostics"} and len(parts) == 4:
+            if validation.get("status") == "invalid":
+                self.send_error(409, "repository validation failed")
+                return
+            self._serve_query(
+                self.workspace.path_for(record, record.analysis_path),
+                self.artifact_hashes.get(repository_id, {}).get("analysis.json"),
+                Path(record.absolute_path), quality=resource == "quality", diagnostics=resource == "diagnostics",
+            )
+            return
         if resource in {"manifest", "analysis.json", "layout.json"} and validation.get("status") == "invalid":
             self.send_error(409, "repository validation failed")
             return
@@ -285,6 +365,7 @@ def serve_analysis(
     *,
     layout_path: Path | None = None,
     bundle_path: Path | None = None,
+    root: Path | None = None,
     host: str = "127.0.0.1",
     port: int = 8765,
 ) -> None:
@@ -326,6 +407,7 @@ def serve_analysis(
         pass
 
     BoundAnalysisRequestHandler.analysis_path = analysis_path
+    BoundAnalysisRequestHandler.source_root = root.resolve() if root is not None else None
     BoundAnalysisRequestHandler.layout_path = layout_path
     BoundAnalysisRequestHandler.bundle_path = bundle_path
     BoundAnalysisRequestHandler.analysis_sha256 = canonical_sha256(document)

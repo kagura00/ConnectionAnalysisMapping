@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .http_analyzer import collect_request
 from .web_common import (
     DomReference,
     WebAnalysisContext,
@@ -14,8 +15,10 @@ from .web_common import (
     node_name,
     node_text,
     resolve_reference,
-    string_value,
     walk_tree,
+)
+from .web_common import (
+    literal_string_value as string_value,
 )
 
 _FUNCTION_DECLARATIONS = {
@@ -218,14 +221,15 @@ def _collect_import(context: WebAnalysisContext, web_file: WebFile, node: Any) -
         return
     target_file = resolve_reference(context, web_file, reference)
     target_id = target_file.module_id if target_file else context.external_node(f"module:{reference}")
-    status = "resolved" if target_file else "external"
+    internal = reference.startswith((".", "/")) or context.projects.is_alias(reference)
+    status = "resolved" if target_file else "unresolved" if internal else "external"
     add_relation(
         context,
         web_file.module_id,
         target_id,
         "imports",
         resolution_status=status,
-        confidence=1.0 if target_file else 0.7,
+        confidence=1.0 if target_file else 0.2 if internal else 0.7,
         source_span=source_node and _span(source_node),
         detail={"expression": node_text(node, web_file.source).strip(), "reference": reference},
     )
@@ -378,9 +382,11 @@ def _collect_call(context: WebAnalysisContext, web_file: WebFile, node: Any) -> 
         return
     callee = node_text(function_node, web_file.source).strip()
     caller = context.enclosing_definition(web_file, node.parent) or web_file.module_id
+    collect_request(context, web_file, node, caller)
     args = node.child_by_field_name("arguments")
     selector = _dom_selector(callee, args, web_file.source)
-    if selector is not None:
+    receiver = context.bindings.expression(web_file, function_node.child_by_field_name("object"))
+    if selector is not None and (receiver is None or receiver.kind in {"document", "dom"}):
         relation_type = "handles" if callee.endswith(".addEventListener") else "references"
         context.dom_references.append(
             DomReference(
@@ -390,6 +396,8 @@ def _collect_call(context: WebAnalysisContext, web_file: WebFile, node: Any) -> 
                 file_path=web_file.relative_path,
                 span=_span(node),
                 detail={"expression": node_text(node, web_file.source).strip(), "selector": selector},
+                scope_owner=receiver.target if receiver else None,
+                document_scope=receiver is not None and receiver.kind in {"document", "dom"} and receiver.target is None,
             )
         )
         if (
@@ -408,7 +416,11 @@ def _collect_call(context: WebAnalysisContext, web_file: WebFile, node: Any) -> 
     detail = {
         "expression": node_text(node, web_file.source).strip(),
         "call_kind": "attribute" if function_node.type == "member_expression" else "direct",
+        "resolution_basis": "static_binding" if status == "resolved" else "external_binding" if status == "external" else "binding_not_established",
     }
+    binding = context.bindings.expression(web_file, function_node)
+    if binding and binding.evidence:
+        detail["resolution_evidence"] = {"strategy": "lexical_receiver", "declarations": binding.evidence}
     add_relation(
         context,
         caller,
@@ -521,34 +533,13 @@ def _resolve_call(
     function_node: Any,
     callee: str,
 ) -> tuple[str, str, float]:
-    if function_node.type in {"identifier", "type_identifier", "predefined_type"}:
-        target = context.resolve_symbol(callee, file_path=web_file.relative_path)
-        if target:
-            target_kind = context.builder.nodes.get(target, {}).get("kind")
-            if target_kind in {"function", "method", "lambda", "class"}:
-                return target, "resolved", 0.95
-            return target, "unresolved", 0.4
-        if callee in _KNOWN_GLOBALS:
-            return context.external_node(f"global:{callee}"), "external", 0.5
-        return context.external_node(f"call:{web_file.relative_path}:{callee}", unknown=True), "unresolved", 0.2
-    if function_node.type == "member_expression":
-        property_node = function_node.child_by_field_name("property")
-        object_node = function_node.child_by_field_name("object")
-        property_name = node_text(property_node, web_file.source).strip() if property_node is not None else callee
-        object_name = node_text(object_node, web_file.source).strip() if object_node is not None else ""
-        if object_name and object_name not in {"this", "super"}:
-            target = context.resolve_symbol(
-                property_name,
-                file_path=web_file.relative_path,
-                qualified_name=f"{object_name}.{property_name}",
-            )
-            if target:
-                return target, "resolved", 0.85
-        target = context.resolve_symbol(property_name, file_path=web_file.relative_path)
-        if target and context.builder.nodes.get(target, {}).get("kind") in {"method", "function"}:
-            return target, "resolved", 0.65
-        return context.external_node(f"call:{web_file.relative_path}:{callee}", unknown=True), "unresolved", 0.2
-    return context.external_node(f"call:{web_file.relative_path}:{callee}", unknown=True), "unresolved", 0.15
+    binding = context.bindings.expression(web_file, function_node)
+    if binding and binding.kind == "symbol" and binding.target:
+        if context.builder.nodes[binding.target]["kind"] in {"function", "method", "lambda", "class"}:
+            return binding.target, "resolved", 0.95
+    if binding and binding.kind == "external":
+        return context.external_node(":".join(binding.origin)), "external", 0.7
+    return context.external_node(f"call:{web_file.relative_path}:{callee}", unknown=True), "unresolved", 0.2
 
 
 def _collect_inheritance(context: WebAnalysisContext, web_file: WebFile, node: Any) -> None:

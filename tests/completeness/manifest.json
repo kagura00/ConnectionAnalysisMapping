@@ -403,13 +403,12 @@
       "checked_kinds": ["class", "function", "method"],
       "checked_relations": ["calls", "contains"],
       "exact_relations": ["calls"],
-      "expected_nodes": [["dart/app.dart", "class", "dart/app.dart:Service"], ["dart/app.dart", "method", "dart/app.dart:run"], ["dart/app.dart", "function", "dart/app.dart:main"]],
+      "expected_nodes": [["dart/app.dart", "class", "dart/app.dart:Service"], ["dart/app.dart", "method", "dart/app.dart:Service.run"], ["dart/app.dart", "function", "dart/app.dart:main"]],
       "expected_edges": [
         ["contains", ["dart/app.dart", "module", "dart/app.dart"], ["dart/app.dart", "class", "dart/app.dart:Service"]],
-        ["contains", ["dart/app.dart", "class", "dart/app.dart:Service"], ["dart/app.dart", "method", "dart/app.dart:run"]],
+        ["contains", ["dart/app.dart", "class", "dart/app.dart:Service"], ["dart/app.dart", "method", "dart/app.dart:Service.run"]],
         ["contains", ["dart/app.dart", "module", "dart/app.dart"], ["dart/app.dart", "function", "dart/app.dart:main"]],
-        ["calls", ["dart/app.dart", "module", "dart/app.dart"], ["dart/app.dart", "class", "dart/app.dart:Service"]],
-        ["calls", ["dart/app.dart", "module", "dart/app.dart"], ["dart/app.dart", "method", "dart/app.dart:run"]]
+        ["calls", ["dart/app.dart", "function", "dart/app.dart:main"], ["dart/app.dart", "class", "dart/app.dart:Service"]]
       ]
     },
     {

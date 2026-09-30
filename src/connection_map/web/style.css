@@ -11,6 +11,15 @@
 
 * { box-sizing: border-box; }
 
+.exploration-controls label { display: block; color: var(--muted); margin: 8px 0; }
+.exploration-controls select { display: block; width: 100%; background: var(--bg); color: var(--text); border: 1px solid #385174; border-radius: 4px; padding: 5px; }
+.context-relation { border-bottom: 1px solid var(--panel-border); padding: 8px 0; }
+.context-relation button { max-width: 100%; overflow-wrap: anywhere; }
+.context-relation p { font-size: 12px; overflow-wrap: anywhere; margin: 5px 0; }
+.quality-warning { color: #fbbf24; }
+#quality-summary { font-size: 12px; }
+.annotation-text { border-left: 3px solid var(--accent); padding: 6px 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
 html, body { height: 100%; margin: 0; }
 
 body {
@@ -195,3 +204,5 @@ h2 { border-bottom: 1px solid var(--panel-border); font-size: 13px; margin: 20px
   .toolbar-menu-body { background: #121f38; border: 1px solid var(--panel-border); border-radius: 5px; box-shadow: 0 12px 28px rgba(0, 0, 0, .4); display: grid; gap: 5px; left: 0; padding: 6px; position: absolute; top: calc(100% + 4px); z-index: 10; }
   .toolbar-menu-body button { text-align: left; white-space: nowrap; }
 }
+.diagnostic-controls label { display: block; margin-top: 0.6rem; }
+.diagnostic-controls select, .diagnostic-controls input { width: 100%; margin-top: 0.3rem; }
