@@ -21,7 +21,9 @@ from .bundle import (
 from .config import AnalysisConfig, ensure_repository_root
 from .contract import ContractError, validate_document
 from .distribution import install_core, rollback_core
+from .evidence import check_freshness, coverage_summary
 from .manual import ManualOverlayError, load_manual, merge_manual, validate_manual
+from .query import GraphQuery
 from .report import summarize_document
 from .scaffold import initialize_target
 from .server import serve_analysis, serve_workspace
@@ -46,6 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     analyze.add_argument("--workspace", type=Path, help="central workspace data directory; otherwise use CONNECTION_MAP_WORKSPACE")
     analyze.add_argument("--deterministic", action="store_true", help="omit time-varying metadata")
+    analyze.add_argument("--fail-on-error", action="store_true", help="save the graph but exit 3 for partial analysis")
     analyze.add_argument(
         "--allow-empty",
         action="store_true",
@@ -99,9 +102,22 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("query", help="case-insensitive substring query")
     search.add_argument("--limit", type=int, default=80)
 
+    context = commands.add_parser("context", help="emit bounded incoming/outgoing relationships for a node ID")
+    context.add_argument("--input", type=Path, required=True, help="analysis JSON path")
+    context.add_argument("--node", required=True, help="exact node ID returned by search")
+    context.add_argument("--direction", choices=["in", "out", "both"], default="both")
+    context.add_argument("--relation", action="append", help="repeatable; default excludes contains")
+    context.add_argument("--resolution", choices=["all", "resolved", "external", "unresolved", "unsupported"], default="all")
+    context.add_argument("--depth", type=int, default=1)
+    context.add_argument("--max-nodes", type=int, default=60)
+    context.add_argument("--max-edges", type=int, default=120)
+    context.add_argument("--root", type=Path, help="compare the snapshot with current selected source files")
+    context.add_argument("--output", type=Path, help="optional context JSON path")
+
     report = commands.add_parser("report", help="summarize graph quality and resolution coverage")
     report.add_argument("--input", type=Path, required=True, help="analysis JSON path")
     report.add_argument("--output", type=Path, help="optional report JSON path")
+    report.add_argument("--root", type=Path, help="check current source freshness")
 
     init = commands.add_parser("init", help="create a repository-local analyzer scaffold")
     init.add_argument("--root", type=Path, default=Path("."), help="target repository root")
@@ -134,6 +150,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--input", type=Path, help="analysis JSON path")
     serve.add_argument("--bundle", type=Path, help="optional static graph bundle directory")
     serve.add_argument("--layout", type=Path, help="optional layout JSON path")
+    serve.add_argument("--root", type=Path, help="source root for freshness checks in the viewer")
     serve.add_argument("--host", default="127.0.0.1", help="bind host (default: 127.0.0.1)")
     serve.add_argument("--port", type=int, default=8765, help="bind port (default: 8765)")
     serve.add_argument("--workspace", type=Path, help="central workspace data directory; otherwise use CONNECTION_MAP_WORKSPACE")
@@ -158,6 +175,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _run_validate_bundle(args)
         if args.command == "search":
             return _run_search(args)
+        if args.command == "context":
+            return _run_context(args)
         if args.command == "report":
             return _run_report(args)
         if args.command == "init":
@@ -268,6 +287,10 @@ def _run_analyze(args: argparse.Namespace) -> int:
         f"wrote {output} ({counts['nodes']} nodes, {counts['edges']} edges, "
         f"{counts['diagnostics']} diagnostics)"
     )
+    if coverage_summary(document)["status"] == "partial":
+        print("warning: analysis is partial; inspect coverage and diagnostics before using relationships", file=sys.stderr)
+        if args.fail_on_error:
+            return 3
     return 0
 
 
@@ -364,6 +387,7 @@ def _run_search(args: argparse.Namespace) -> int:
 def _run_report(args: argparse.Namespace) -> int:
     document = _load_analysis(args.input)
     report = summarize_document(document)
+    report["freshness"] = check_freshness(document, args.root)
     payload = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     if args.output is None:
         print(payload, end="")
@@ -371,6 +395,21 @@ def _run_report(args: argparse.Namespace) -> int:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(payload, encoding="utf-8")
         print(f"wrote report {args.output}")
+    return 0
+
+
+def _run_context(args: argparse.Namespace) -> int:
+    result = GraphQuery(_load_analysis(args.input)).neighborhood(
+        args.node, direction=args.direction, relations=args.relation, resolution=args.resolution,
+        depth=args.depth, max_nodes=args.max_nodes, max_edges=args.max_edges, root=args.root,
+    )
+    payload = json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    if args.output is None:
+        print(payload, end="")
+    else:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(payload, encoding="utf-8")
+        print(f"wrote context {args.output}")
     return 0
 
 
@@ -411,5 +450,6 @@ def _run_serve(args: argparse.Namespace) -> int:
         return 0
     if args.input is None:
         raise ValueError("serve requires --input, or CONNECTION_MAP_WORKSPACE/--workspace for central mode")
-    serve_analysis(args.input, layout_path=args.layout, bundle_path=args.bundle, host=args.host, port=args.port)
+    serve_analysis(args.input, layout_path=args.layout, bundle_path=args.bundle, root=args.root,
+                   host=args.host, port=args.port)
     return 0

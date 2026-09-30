@@ -97,6 +97,7 @@ Linux/macOSのportable版:
 | `--workspace PATH` | central workspaceの保存先 |
 | `--deterministic` | 時刻など変動するmetadataを省略 |
 | `--allow-empty` | ノード0件の解析を許可 |
+| `--fail-on-error` | 部分的な解析はJSON保存後に終了コード3。未指定時も警告を表示 |
 | `--include-tests` | 設定のtest_patternsを含める |
 | `--exclude-tests` | 設定のtest_patternsを除外する |
 
@@ -118,6 +119,7 @@ uv run connection-map serve --input C:\path\to\repository\.connection-map\snapsh
 | `--input PATH` | 解析JSON |
 | `--bundle PATH` | 静的バンドルのディレクトリ |
 | `--layout PATH` | レイアウトJSON |
+| `--root PATH` | 直接モードでソースの鮮度を比較するルート。central modeは登録先を使用 |
 | `--host HOST` | bind先。既定は`127.0.0.1` |
 | `--port PORT` | ポート。既定は`8765` |
 | `--workspace PATH` | central workspaceの保存先 |
@@ -178,6 +180,32 @@ uv run connection-map report --input C:\path\to\repository\.connection-map\snaps
 uv run connection-map report --input C:\path\to\repository\.connection-map\snapshots\analysis.json `
   --output C:\path\to\repository\report.json
 ```
+
+`report --root PATH`を指定すると、成果物の件数・解析範囲に加えて、現在の選択ソースとの追加・変更・削除を比較する。ルートを省略した場合は現在のソースを確認しない。
+
+### `context`
+
+`search`で得たノードIDの周辺を、根拠・未解決情報・解析範囲・鮮度付きJSONとして返す。画面も同じ問い合わせを使う。
+
+```powershell
+uv run connection-map context --input C:\analysis\analysis.json `
+  --node "python:app.py:main:function" `
+  --direction both --relation calls --depth 1 --max-nodes 60 --max-edges 120 `
+  --root C:\path\to\repository --output C:\analysis\context.json
+```
+
+例のパス・ノードIDは対象に合わせて変更し、IDは`search`の結果から取得する。`--relation`は繰り返し指定できる。省略時は包含を除く。`--resolution`の既定は`all`、ほかに`resolved`・`external`・`unresolved`・`unsupported`を指定できる。深さは0〜5、ノード上限は1〜500、接続上限は1〜1000。上限や指定深さによる省略は`truncation`に記録する。詳細は[人とAIの接続探索](ai-context.md)を参照。
+
+### 診断HTTP API
+
+`serve`の直接モードでは`/diagnostics`、central modeでは`/api/repositories/{id}/diagnostics`を使用する。例: `/diagnostics?severity=error&file=login&offset=0&limit=200`。
+
+- `severity`: `all`（既定）、`error`、`warning`、`info`。
+- `file`: ファイル名の部分一致。大文字・小文字を区別しない。
+- `offset`: 0以上の整数。`limit`: 1〜200、既定200。
+- 応答: `analysis_sha256`、`diagnostics`、`total`（絞り込み後）、`total_all`、`next_offset`、`severity_counts`。エラー、警告、情報の順に並べる。
+
+ブラウザーに読み込んだチャンク数にかかわらず全診断を対象とする。未知・重複パラメーターや範囲外の値は400で拒否する。
 
 ## 手動情報
 

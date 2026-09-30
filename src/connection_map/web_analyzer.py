@@ -6,6 +6,7 @@ import platform
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .angular_analyzer import collect_template, discover_components
 from .config import (
     AnalysisConfig,
     discover_source_files,
@@ -15,11 +16,14 @@ from .config import (
 from .contract import validate_document
 from .css_analyzer import collect as collect_css
 from .html_analyzer import collect as collect_html
+from .http_analyzer import discover_routes
 from .javascript_analyzer import collect_definitions as collect_javascript_definitions
 from .javascript_analyzer import collect_relations as collect_javascript_relations
 from .model import GraphBuilder
 from .typescript_analyzer import collect_definitions as collect_typescript_definitions
 from .typescript_analyzer import collect_relations as collect_typescript_relations
+from .typescript_context import TypeScriptProjects
+from .web_bindings import Bindings
 from .web_common import (
     WebAnalysisContext,
     _git_commit,
@@ -46,6 +50,11 @@ def analyze_repository(
     root = root.resolve()
     builder = GraphBuilder()
     context = WebAnalysisContext(root, active_config, builder)
+    context.projects = TypeScriptProjects(root, active_config)
+    for path, message in context.projects.errors:
+        context.diagnostic("typescript_context_error", "warning", message, file_path=path)
+    if context.projects.errors:
+        context.extraction_limitations.append("Some TypeScript project settings could not be evaluated.")
     files, skipped = discover_source_files(root, active_config)
     for relative_path, reason in skipped:
         code = "generated_file" if reason == "generated" else "excluded_file"
@@ -84,15 +93,6 @@ def analyze_repository(
 
     for web_file in context.files:
         context.add_module(web_file)
-        if web_file.tree.root_node.has_error:
-            context.diagnostic(
-                "parse_error",
-                "error",
-                f"Tree-sitterが構文エラーを回復しました: {web_file.relative_path}",
-                web_file=web_file,
-                tree_node=web_file.tree.root_node,
-                details={"grammar": web_file.grammar},
-            )
 
     # Definitions must be collected for every file before relation resolution.
     for web_file in context.files:
@@ -101,8 +101,16 @@ def analyze_repository(
         elif web_file.language == "typescript":
             collect_typescript_definitions(context, web_file)
 
+    context.bindings = Bindings(context)
+    discover_components(context)
+    discover_routes(context)
     for web_file in context.files:
-        if web_file.language == "html":
+        if web_file.tree.root_node.has_error and web_file.relative_path not in context.template_owners:
+            context.diagnostic("parse_error", "error", f"Tree-sitterが構文エラーを回復しました: {web_file.relative_path}",
+                               web_file=web_file, tree_node=web_file.tree.root_node, details={"grammar": web_file.grammar})
+        if web_file.relative_path in context.template_owners:
+            collect_template(context, web_file)
+        elif web_file.language == "html":
             collect_html(context, web_file)
         elif web_file.language == "css":
             collect_css(context, web_file)
@@ -133,6 +141,9 @@ def analyze_repository(
         "generated_at": None if deterministic else datetime.now(UTC).isoformat(),
         "deterministic": deterministic,
         "settings": active_config.to_dict(),
+        "extensions": {"extraction_limitations": sorted(set(context.extraction_limitations)),
+                       "typescript_context": {"files": sorted(path.relative_to(root).as_posix() for path in context.projects.inputs),
+                                              "errors": context.projects.errors}},
     }
     document = builder.document(meta)
     validate_document(document)
@@ -141,7 +152,14 @@ def analyze_repository(
 
 def _resolve_dom_references(context: WebAnalysisContext) -> None:
     for reference in context.dom_references:
-        matches = _matching_elements(context, reference.selector)
+        files = set()
+        if reference.scope_owner:
+            template = context.component_templates.get(reference.scope_owner)
+            if template:
+                files.add(template)
+        elif reference.document_scope:
+            files = _document_scope(context, reference.file_path)
+        matches = [item for item in _matching_elements(context, reference.selector) if item.file_path in files]
         if matches:
             for element in matches:
                 add_relation(
@@ -152,7 +170,7 @@ def _resolve_dom_references(context: WebAnalysisContext) -> None:
                     resolution_status="resolved",
                     confidence=0.9,
                     source_span=reference.span,
-                    detail=reference.detail,
+                    detail={**reference.detail, "resolution_basis": "document_scope", "document_files": sorted(files)},
                 )
             continue
         target = context.external_node(f"dom:{reference.selector}", unknown=True)
@@ -180,7 +198,8 @@ def _resolve_dom_references(context: WebAnalysisContext) -> None:
 def _resolve_css_styles(context: WebAnalysisContext) -> None:
     for rule in context.css_rules:
         for selector in rule.selectors:
-            matches = _matching_elements(context, selector)
+            files = _document_scope(context, rule.file_path)
+            matches = [item for item in _matching_elements(context, selector) if item.file_path in files]
             if not matches:
                 if selector and not _is_simple_selector(selector):
                     context.diagnostic(
@@ -218,6 +237,23 @@ def _matching_elements(context: WebAnalysisContext, selector: str) -> list:
         value = selector.lower()
         return [element for element in context.html_elements if element.tag == value]
     return []
+
+
+def _document_scope(context: WebAnalysisContext, path: str) -> set[str]:
+    """Only HTML documents that explicitly load this script/style or its imports."""
+    target = context.files_by_path[path].module_id
+    incoming: dict[str, set[str]] = {}
+    for edge in context.builder.edges.values():
+        if edge["relation_type"] in {"imports", "dynamic_imports"} and edge["resolution_status"] == "resolved":
+            incoming.setdefault(edge["target_id"], set()).add(edge["source_id"])
+    pending, seen = [target], set()
+    while pending:
+        current = pending.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        pending.extend(incoming.get(current, []))
+    return {file.relative_path for file in context.files if file.language == "html" and file.module_id in seen}
 
 
 def _is_simple_selector(selector: str) -> bool:

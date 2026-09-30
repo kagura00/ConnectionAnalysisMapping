@@ -67,6 +67,8 @@ class DomReference:
     file_path: str
     span: dict[str, int] | None
     detail: dict[str, Any]
+    scope_owner: str | None = None
+    document_scope: bool = False
 
 
 @dataclass(slots=True)
@@ -86,6 +88,12 @@ class WebAnalysisContext:
     html_elements: list[HtmlElementInfo] = field(default_factory=list)
     css_rules: list[CssRuleInfo] = field(default_factory=list)
     dom_references: list[DomReference] = field(default_factory=list)
+    projects: Any = None
+    bindings: Any = None
+    component_templates: dict[str, str] = field(default_factory=dict)
+    template_owners: dict[str, list[str]] = field(default_factory=dict)
+    extraction_limitations: list[str] = field(default_factory=list)
+    http_routes: dict[tuple[str, str], list[str]] = field(default_factory=dict)
     _external_node_ids: dict[str, str] = field(default_factory=dict)
 
     def add_module(self, web_file: WebFile) -> None:
@@ -203,9 +211,6 @@ class WebAnalysisContext:
             local = self.symbols_by_file_name.get(file_path, {}).get(name)
             if local:
                 return local.node_id
-        candidates = self.symbols_by_name.get(name, [])
-        if len(candidates) == 1:
-            return candidates[0].node_id
         return None
 
     def external_node(self, label: str, *, unknown: bool = False) -> str:
@@ -381,6 +386,13 @@ def string_value(node: Any | None, source: bytes) -> str | None:
     return raw
 
 
+def literal_string_value(node: Any | None, source: bytes) -> str | None:
+    """Read a JS/TS literal without treating an identifier as its own value."""
+    if node is None or node.type not in {"string", "template_string"}:
+        return None
+    return string_value(node, source)
+
+
 def visibility_for_name(name: str) -> str:
     return "private" if name.startswith("_") else "public"
 
@@ -454,16 +466,30 @@ def resolve_reference(
     elif clean.startswith(".") or allow_bare:
         candidate = posixpath.normpath(posixpath.join(posixpath.dirname(current.relative_path), clean))
     else:
-        return None
+        groups = context.projects.candidates(current.path, clean) if context.projects else []
+        matches = {}
+        for group in groups:
+            for candidate in group:
+                target = _reference_candidate(context, candidate)
+                if target is not None:
+                    matches[target.relative_path] = target
+                    break
+        return next(iter(matches.values())) if len(matches) == 1 else None
+    return _reference_candidate(context, candidate)
+
+
+def _reference_candidate(context: WebAnalysisContext, candidate: str) -> WebFile | None:
     if candidate == ".." or candidate.startswith("../"):
         return None
     candidates = [candidate]
-    suffix = Path(candidate).suffix.lower()
+    stem, suffix = posixpath.splitext(candidate)
+    suffix = suffix.lower()
     web_extensions = (".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".css", ".html")
     if suffix in {".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"}:
-        stem = str(Path(candidate).with_suffix(""))
         candidates.extend(stem + extension for extension in web_extensions[:8])
-    elif not suffix:
+    elif suffix not in web_extensions:
+        # Dots in a module basename (auth-session.store) are not necessarily
+        # source extensions. Keep the full basename when appending extensions.
         candidates.extend(candidate + extension for extension in web_extensions)
         candidates.extend(posixpath.join(candidate, "index" + extension) for extension in web_extensions)
     for item in candidates:

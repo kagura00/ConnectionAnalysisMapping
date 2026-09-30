@@ -10,6 +10,7 @@ import platform
 import subprocess
 import sys
 import tokenize
+from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -83,6 +84,8 @@ class PythonAnalyzer:
         # instead of incorrectly falling through to a module-level symbol.
         self.scope_symbols: dict[str, dict[str, str | None]] = {}
         self.scope_imports: dict[str, dict[str, ImportBinding]] = {}
+        self.module_binding_counts: dict[str, Counter[str]] = {}
+        self.module_top_level_imports: dict[str, set[int]] = {}
         self.scope_parent: dict[str, str | None] = {}
         self.scope_kind: dict[str, str] = {}
         self.scope_qualname: dict[str, str] = {}
@@ -185,6 +188,10 @@ class PythonAnalyzer:
         self.modules.append(module)
         self.module_by_name[module_name] = module
         self.module_node_by_id[node_id] = module
+        self.module_binding_counts[node_id] = _module_binding_counts(tree)
+        self.module_top_level_imports[node_id] = {
+            statement.lineno for statement in tree.body if isinstance(statement, ast.Import | ast.ImportFrom)
+        }
         self.node_kind[node_id] = "module"
         self.node_name[node_id] = module_name
         self.node_module[node_id] = module
@@ -367,21 +374,27 @@ class PythonAnalyzer:
             details={"reason": reason},
         )
 
-    def resolve_name(self, name: str, scope_id: str) -> str | None:
+    def resolve_name(self, name: str, scope_id: str, *, trace: list[dict] | None = None) -> str | None:
         current: str | None = scope_id
         while current is not None:
+            if (current in self.module_binding_counts and name in self.scope_imports.get(current, {})
+                    and self.module_binding_counts[current][name] > 1):
+                return None
             symbols = self.scope_symbols.get(current, {})
             if name in symbols:
                 return symbols[name]
             binding = self.scope_imports.get(current, {}).get(name)
             if binding is not None:
-                return self.resolve_binding(binding, current)
+                return self.resolve_binding(binding, current, trace=trace)
             current = self.scope_parent.get(current)
         if name in _PYTHON_BUILTINS:
             return self._add_external_node(f"builtin:{name}")
         return None
 
-    def resolve_binding(self, binding: ImportBinding, scope_id: str) -> str | None:
+    def resolve_binding(
+        self, binding: ImportBinding, scope_id: str, *,
+        seen: frozenset[tuple[str, str]] = frozenset(), trace: list[dict] | None = None,
+    ) -> str | None:
         if binding.member is None:
             module = self.module_by_name.get(binding.module_name)
             if module is not None:
@@ -393,13 +406,39 @@ class PythonAnalyzer:
             return self._add_external_node(f"module:{binding.module_name}")
         module = self.module_by_name.get(binding.module_name)
         if module is not None:
-            symbol_id = self.scope_symbols.get(module.node_id, {}).get(binding.member)
-            if symbol_id is not None:
-                return symbol_id
-            submodule = self.module_by_name.get(f"{binding.module_name}.{binding.member}")
-            if submodule is not None:
-                return submodule.node_id
+            return self.resolve_module_member(module, binding.member, seen=seen, trace=trace)
         return self._add_external_node(f"symbol:{binding.module_name}.{binding.member}")
+
+    def resolve_module_member(
+        self, module: ModuleInfo, name: str, *,
+        seen: frozenset[tuple[str, str]] = frozenset(), trace: list[dict] | None = None,
+    ) -> str | None:
+        key = (module.node_id, name)
+        if key in seen or len(seen) >= 64:
+            return None
+        seen = seen | {key}
+        counts = self.module_binding_counts[module.node_id]
+        if counts[name] > 1 or counts["*"]:
+            return None
+        symbols = self.scope_symbols.get(module.node_id, {})
+        if name in symbols:
+            return symbols[name]
+        binding = self.scope_imports.get(module.node_id, {}).get(name)
+        submodule = self.module_by_name.get(f"{module.module_name}.{name}")
+        if binding is not None:
+            if not binding.span or binding.span["start_line"] not in self.module_top_level_imports[module.node_id]:
+                return None
+            if trace is not None:
+                trace.append({"file": module.relative_path, "span": binding.span,
+                              "module": binding.module_name, "member": binding.member, "local_name": name})
+            # ``from package import child`` in package/__init__.py is a
+            # submodule import, not an infinitely recursive re-export.
+            if submodule and binding.module_name == module.module_name and binding.member == name:
+                return submodule.node_id
+            return self.resolve_binding(binding, module.node_id, seen=seen, trace=trace)
+        if counts[name]:  # Assignment/loop binding with no statically known value.
+            return None
+        return submodule.node_id if submodule else None
 
     def resolve_annotation(self, annotation: ast.AST, scope_id: str) -> str | None:
         """Resolve the deliberately small subset of annotations used as hints.
@@ -457,7 +496,11 @@ class PythonAnalyzer:
 
     def resolve_expr(self, expression: ast.AST, scope_id: str) -> str | None:
         if isinstance(expression, ast.Name):
-            return self.resolve_name(expression.id, scope_id)
+            trace: list[dict] = []
+            target = self.resolve_name(expression.id, scope_id, trace=trace)
+            if target and trace:
+                self.resolution_evidence[id(expression)] = {"strategy": "module_reexport", "imports": trace}
+            return target
         if isinstance(expression, ast.Attribute):
             base = self.resolve_expr(expression.value, scope_id)
             if base is None and isinstance(expression.value, ast.Name) and expression.value.id in {"self", "cls"}:
@@ -478,10 +521,11 @@ class PythonAnalyzer:
             if self.node_kind.get(base) == "module":
                 module = self.module_node_by_id.get(base)
                 if module is not None:
-                    submodule = self.module_by_name.get(f"{module.module_name}.{expression.attr}")
-                    if submodule is not None:
-                        return submodule.node_id
-                    return self.scope_symbols.get(base, {}).get(expression.attr)
+                    trace = []
+                    target = self.resolve_module_member(module, expression.attr, trace=trace)
+                    if target and trace:
+                        self.resolution_evidence[id(expression)] = {"strategy": "module_reexport", "imports": trace}
+                    return target
             if self.node_kind.get(base) == "class":
                 return self.scope_symbols.get(base, {}).get(expression.attr)
             if self.node_kind.get(base) == "external":
@@ -489,6 +533,47 @@ class PythonAnalyzer:
                 base_name = base_node.get("qualified_name") or base
                 return self._add_external_node(f"{base_name}.{expression.attr}")
         return None
+
+
+def _module_binding_counts(tree: ast.Module) -> Counter[str]:
+    class Bindings(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.counts: Counter[str] = Counter()
+
+        def visit_Name(self, node: ast.Name) -> None:
+            if isinstance(node.ctx, ast.Store | ast.Del):
+                self.counts[node.id] += 1
+
+        def visit_Import(self, node: ast.Import) -> None:
+            for alias in node.names:
+                self.counts[alias.asname or alias.name.split(".", 1)[0]] += 1
+
+        def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+            for alias in node.names:
+                self.counts[alias.asname or alias.name] += 1
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            self.counts[node.name] += 1
+
+        visit_AsyncFunctionDef = visit_FunctionDef
+        visit_ClassDef = visit_FunctionDef
+
+        def visit_Lambda(self, node: ast.Lambda) -> None:
+            pass
+
+        def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+            if node.name:
+                self.counts[node.name] += 1
+            self.generic_visit(node)
+
+        def visit_MatchAs(self, node: ast.MatchAs) -> None:
+            if node.name:
+                self.counts[node.name] += 1
+            self.generic_visit(node)
+
+    collector = Bindings()
+    collector.visit(tree)
+    return collector.counts
 
 
 class DefinitionCollector(ast.NodeVisitor):

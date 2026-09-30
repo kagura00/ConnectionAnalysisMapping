@@ -6,6 +6,7 @@ from collections import Counter
 from typing import Any
 
 from .contract import ContractError, canonical_sha256, validate_document
+from .evidence import check_freshness, coverage_summary
 
 
 def summarize_document(document: dict[str, Any]) -> dict[str, Any]:
@@ -33,6 +34,8 @@ def summarize_document(document: dict[str, Any]) -> dict[str, Any]:
         "schema_version": "1.0",
         "analysis_schema_version": document["schema_version"],
         "analysis_sha256": canonical_sha256(document),
+        "coverage": coverage_summary(document),
+        "freshness": check_freshness(document),
         "counts": {
             "nodes": len(nodes),
             "edges": len(edges),

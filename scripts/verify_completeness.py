@@ -101,6 +101,8 @@ def _expected_edges(case: dict[str, Any]) -> Counter[EdgeKey]:
 def _actual_edges(
     document: dict[str, Any],
     relation_types: set[str],
+    *,
+    candidates: bool = False,
 ) -> Counter[EdgeKey]:
     refs_by_id = {
         str(node["id"]): _node_key(node)
@@ -116,7 +118,10 @@ def _actual_edges(
         # external relationships remain valuable diagnostics, but they are a
         # separate quality dimension and must not look like an unexpected
         # internal declaration edge.
-        if edge.get("resolution_status") != "resolved":
+        if candidates:
+            if edge.get("resolution_status") != "unresolved" or not edge.get("detail", {}).get("candidate_target_id"):
+                continue
+        elif edge.get("resolution_status") != "resolved":
             continue
         key = _edge_key(edge, refs_by_id)
         if key is not None:
@@ -184,6 +189,10 @@ def verify_case(project_root: Path, case: dict[str, Any]) -> dict[str, Any]:
         }
     )
     extra_edges = actual_exact_edges - expected_exact_edges
+    expected_candidates = _expected_edges({"expected_edges": case.get("expected_candidate_edges", [])})
+    actual_candidates = _actual_edges(document, checked_relations, candidates=True)
+    missing_candidates = expected_candidates - actual_candidates
+    extra_candidates = actual_candidates - expected_candidates
 
     selected_files = {
         str(node["file"])
@@ -204,6 +213,8 @@ def verify_case(project_root: Path, case: dict[str, Any]) -> dict[str, Any]:
         or extra_nodes
         or missing_edges
         or extra_edges
+        or missing_candidates
+        or extra_candidates
         or missing_files
         or extra_files
         or blocked_diagnostics
@@ -227,6 +238,8 @@ def verify_case(project_root: Path, case: dict[str, Any]) -> dict[str, Any]:
         "actual_edges": sum(actual_edges.values()),
         "missing_edges": _format_edge_differences(missing_edges),
         "extra_edges": _format_edge_differences(extra_edges),
+        "missing_candidates": _format_edge_differences(missing_candidates),
+        "extra_candidates": _format_edge_differences(extra_candidates),
         "blocked_diagnostics": blocked_diagnostics,
         "diagnostic_counts": dict(Counter(item.get("code", "") for item in document.get("diagnostics", []))),
         "analysis_counts": document.get("meta", {}).get("counts", {}),

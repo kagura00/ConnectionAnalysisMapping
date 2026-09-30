@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .analysis_context import load_analysis_context
+from .c_family_bindings import CBindings
 from .c_family_common import (
     CFamilyAnalysisContext,
     CFile,
@@ -132,10 +133,23 @@ def analyze_repository(
                 details={"grammar": c_file.grammar},
             )
 
+    bindings = CBindings(context)
     for c_file in context.files:
-        _collect_definitions(context, c_file)
+        _collect_definitions(context, c_file, bindings, structural_only=True)
     for c_file in context.files:
-        _collect_relations(context, c_file)
+        _collect_definitions(context, c_file, bindings)
+    for c_file in context.files:
+        for node in walk_tree(c_file.tree.root_node):
+            if node.type == "preproc_include":
+                _collect_include(context, c_file, node)
+    bindings.prepare()
+    for c_file in context.files:
+        for node in walk_tree(c_file.tree.root_node):
+            if node.type == "base_class_clause":
+                _collect_inheritance(context, c_file, node, bindings)
+    bindings.prepare_inheritance()
+    for c_file in context.files:
+        _collect_relations(context, c_file, bindings)
 
     meta = {
         "analyzer": {"name": ANALYZER_NAME, "version": ANALYZER_VERSION},
@@ -206,13 +220,35 @@ def _scope_parent(context: CFamilyAnalysisContext, c_file: CFile, node: Any) -> 
     return c_file.module_id
 
 
-def _collect_definitions(context: CFamilyAnalysisContext, c_file: CFile) -> None:
+def _collect_definitions(
+    context: CFamilyAnalysisContext, c_file: CFile, bindings: CBindings, *, structural_only: bool = False,
+) -> None:
     for node in walk_tree(c_file.tree.root_node):
-        candidate = _definition_candidate(context, c_file, node)
+        candidate = _definition_candidate(context, c_file, node, bindings)
         if candidate is None:
             continue
         kind, name, declaration_kind, extensions = candidate
+        if (c_file.relative_path, node.id) in context.definition_by_node:
+            continue
+        if structural_only:
+            if kind in _FUNCTION_KINDS:
+                continue
+            current = node.parent
+            while current is not None and current.type not in {"function_definition", "lambda_expression"}:
+                current = current.parent
+            if current is not None:
+                continue
         parent_id = _scope_parent(context, c_file, node)
+        if kind == "namespace":
+            # Compact C++17 syntax still introduces every namespace segment.
+            for segment in name.split("::"):
+                parent_symbol = context.definitions.get(parent_id)
+                prefix = parent_symbol.qualified_name + "::" if parent_symbol else ""
+                parent_id = context.add_definition(
+                    c_file, node, kind=kind, name=segment, qualified_name=prefix + segment,
+                    declaration_kind=declaration_kind, parent_id=parent_id,
+                )
+            continue
         parent_id, qualified_name = _qualified_scope(context, c_file, node, name, parent_id)
         parent_symbol = context.definitions.get(parent_id)
         if kind == "function" and parent_symbol is not None and parent_symbol.kind in {"class", "type"}:
@@ -243,6 +279,7 @@ def _definition_candidate(
     context: CFamilyAnalysisContext,
     c_file: CFile,
     node: Any,
+    bindings: CBindings,
 ) -> tuple[str, str, str, dict[str, Any]] | None:
     node_type = node.type
     if node_type == "namespace_definition":
@@ -295,8 +332,8 @@ def _definition_candidate(
         kind = "method" if parent_kind in {"class", "type"} else "function"
         return kind, name, "definition", {"has_body": True}
     if node_type in {"declaration", "field_declaration"}:
-        declarator = node.child_by_field_name("declarator")
-        if declarator is None or declarator.type != "function_declarator" or not _callable_declarator(declarator):
+        declarator = bindings.declaration(c_file, node)
+        if declarator is None:
             return None
         parent_id = _scope_parent(context, c_file, node)
         parent_symbol = context.definitions.get(parent_id) if parent_id else None
@@ -329,21 +366,18 @@ def _qualified_scope(
         if resolved_parent is not None:
             resolved_symbol = context.definitions[resolved_parent]
             return resolved_parent, f"{resolved_symbol.qualified_name}::{simple_name}"
-        name = simple_name
+        # An unavailable parent must not erase an explicit namespace/class prefix.
+        return parent_id, f"{candidate_q}::{simple_name}"
     qualified_name = f"{parent_q}::{name}" if parent_q else name
     return parent_id, qualified_name
 
 
-def _collect_relations(context: CFamilyAnalysisContext, c_file: CFile) -> None:
+def _collect_relations(context: CFamilyAnalysisContext, c_file: CFile, bindings: CBindings) -> None:
     for node in walk_tree(c_file.tree.root_node):
-        if node.type == "preproc_include":
-            _collect_include(context, c_file, node)
-        elif node.type == "call_expression":
-            _collect_call(context, c_file, node)
-        elif node.type == "base_class_clause":
-            _collect_inheritance(context, c_file, node)
+        if node.type == "call_expression":
+            _collect_call(context, c_file, node, bindings)
         elif node.type in {"declaration", "field_declaration", "parameter_declaration"}:
-            _collect_type_use(context, c_file, node)
+            _collect_type_use(context, c_file, node, bindings)
 
 
 def _collect_include(context: CFamilyAnalysisContext, c_file: CFile, node: Any) -> None:
@@ -443,19 +477,22 @@ def _resolve_include(
     return None
 
 
-def _collect_call(context: CFamilyAnalysisContext, c_file: CFile, node: Any) -> None:
+def _collect_call(context: CFamilyAnalysisContext, c_file: CFile, node: Any, bindings: CBindings) -> None:
+    if bindings.declaration_type_expression(c_file, node):
+        return
     function_node = node.child_by_field_name("function")
     caller = _scope_parent(context, c_file, node)
     span = span_for_tree(node)
     expression = node_text(node, c_file.source).strip()
     callee = node_text(function_node, c_file.source).strip() if function_node is not None else ""
     call_kind = _call_kind(function_node)
+    evidence = None
     if function_node is None or not callee:
         target = context.external_node("call:<unknown>", language=c_file.language, unknown=True, c_file=c_file, span=span)
         status = "unresolved"
         confidence = 0.1
         _call_diagnostic(context, c_file, node, caller, expression, "呼び出し先の構文を取得できません")
-    elif call_kind == "member":
+    elif call_kind in {"member", "unknown"}:
         target = context.external_node(
             f"call:{_clean_reference_name(callee)}",
             language=c_file.language,
@@ -465,21 +502,26 @@ def _collect_call(context: CFamilyAnalysisContext, c_file: CFile, node: Any) -> 
         )
         status = "unresolved"
         confidence = 0.2
-        _call_diagnostic(context, c_file, node, caller, expression, "メンバー呼び出しの受け手の型を静的に特定できません")
+        _call_diagnostic(context, c_file, node, caller, expression, "受け手の型または間接呼び出し先を静的に特定できません")
     else:
         reference = _clean_reference_name(callee)
-        candidates = _call_candidates(context, reference)
+        lookup = bindings.resolve(c_file, node, ("::" if callee.startswith("::") else "") + reference,
+                                  kinds=_FUNCTION_KINDS)
+        if lookup.type_expression:
+            return  # A functional type conversion is not a function call.
+        candidates = lookup.candidates
         if len(candidates) == 1:
             target = candidates[0].node_id
             status = "resolved"
             confidence = 1.0
-        elif len(candidates) > 1:
+            evidence = bindings.evidence(c_file, node, candidates[0])
+        elif len(candidates) > 1 or lookup.reason:
             target = context.external_node(
                 f"call:{reference}", language=c_file.language, unknown=True, c_file=c_file, span=span
             )
             status = "unresolved"
             confidence = 0.2
-            _call_diagnostic(context, c_file, node, caller, expression, "同名の候補が複数あります")
+            _call_diagnostic(context, c_file, node, caller, expression, lookup.reason or "同名またはoverloadの候補が複数あります")
         else:
             target = context.external_node(f"call:{reference}", language=c_file.language)
             status = "external"
@@ -492,18 +534,9 @@ def _collect_call(context: CFamilyAnalysisContext, c_file: CFile, node: Any) -> 
         resolution_status=status,
         confidence=confidence,
         source_span=span,
-        detail={"expression": expression, "callee": callee, "call_kind": call_kind},
+        detail={"expression": expression, "callee": callee, "call_kind": call_kind,
+                **({"resolution_evidence": evidence} if evidence else {})},
     )
-
-
-def _call_candidates(context: CFamilyAnalysisContext, reference: str) -> list[Any]:
-    if not reference:
-        return []
-    if "::" in reference:
-        candidates = context.symbols_for_qualified_name(reference, kinds=_FUNCTION_KINDS)
-        if candidates:
-            return candidates
-    return context.symbols_for_name(reference.rsplit("::", 1)[-1], kinds=_FUNCTION_KINDS)
 
 
 def _call_diagnostic(
@@ -525,7 +558,7 @@ def _call_diagnostic(
     )
 
 
-def _collect_inheritance(context: CFamilyAnalysisContext, c_file: CFile, node: Any) -> None:
+def _collect_inheritance(context: CFamilyAnalysisContext, c_file: CFile, node: Any, bindings: CBindings) -> None:
     parent_id = _scope_parent(context, c_file, node)
     parent = context.definitions.get(parent_id) if parent_id else None
     if parent is None or parent.kind not in _TYPE_KINDS:
@@ -536,12 +569,14 @@ def _collect_inheritance(context: CFamilyAnalysisContext, c_file: CFile, node: A
         reference = _type_reference_text(child, c_file.source)
         if not reference:
             continue
-        candidates = _type_candidates(context, reference)
+        raw = node_text(child, c_file.source).strip()
+        lookup = bindings.inheritance_lookup(c_file, node, parent, reference, raw, _TYPE_KINDS)
+        candidates = lookup.candidates
         if len(candidates) == 1:
             target = candidates[0].node_id
             status = "resolved"
             confidence = 1.0
-        elif len(candidates) > 1:
+        elif len(candidates) > 1 or lookup.reason:
             target = context.external_node(
                 f"inherit:{reference}", language=c_file.language, unknown=True, c_file=c_file, span=span_for_tree(child)
             )
@@ -550,7 +585,7 @@ def _collect_inheritance(context: CFamilyAnalysisContext, c_file: CFile, node: A
             context.diagnostic(
                 "unresolved_inheritance",
                 "warning",
-                f"継承元を一意に解決できません: {reference}",
+                f"継承元を一意に解決できません: {reference} ({lookup.reason or '候補が複数あります'})",
                 c_file=c_file,
                 tree_node=child,
                 node_id=parent_id,
@@ -568,26 +603,18 @@ def _collect_inheritance(context: CFamilyAnalysisContext, c_file: CFile, node: A
             resolution_status=status,
             confidence=confidence,
             source_span=span_for_tree(child),
-            detail={"reference": reference},
+            detail={"reference": reference, "source_reference": raw},
         )
 
 
-def _type_candidates(context: CFamilyAnalysisContext, reference: str) -> list[Any]:
-    if "::" in reference:
-        exact = context.symbols_for_qualified_name(reference, kinds=_TYPE_KINDS)
-        if exact:
-            return exact
-    return context.symbols_for_name(reference.rsplit("::", 1)[-1], kinds=_TYPE_KINDS)
-
-
-def _collect_type_use(context: CFamilyAnalysisContext, c_file: CFile, node: Any) -> None:
+def _collect_type_use(context: CFamilyAnalysisContext, c_file: CFile, node: Any, bindings: CBindings) -> None:
     type_node = node.child_by_field_name("type")
     if type_node is None or type_node.type not in _TYPE_NODE_TYPES:
         return
     reference = _type_reference_text(type_node, c_file.source)
     if not reference or reference in _PRIMITIVE_TYPES:
         return
-    candidates = _type_candidates(context, reference)
+    candidates = bindings.resolve(c_file, node, reference, kinds=_TYPE_KINDS).candidates
     if len(candidates) != 1:
         return
     source_id = _scope_parent(context, c_file, node)
@@ -639,13 +666,6 @@ def _declarator_name(node: Any | None, source: bytes) -> str | None:
         if result:
             return result
     return None
-
-
-def _callable_declarator(node: Any) -> bool:
-    declarator = node.child_by_field_name("declarator")
-    if declarator is None:
-        return False
-    return declarator.type not in {"parenthesized_declarator", "pointer_declarator"}
 
 
 def _type_reference_text(node: Any, source: bytes) -> str:

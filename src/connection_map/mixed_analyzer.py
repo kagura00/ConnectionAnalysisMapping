@@ -153,9 +153,11 @@ def analyze_repository(
     builder = GraphBuilder()
     analyzers: list[dict[str, str]] = []
     runtimes: list[dict[str, Any]] = []
+    extraction_limitations: set[str] = set()
     for component_language, document in child_documents:
         analyzers.append(document["meta"]["analyzer"])
         runtimes.append(document["meta"]["runtime"])
+        extraction_limitations.update(document["meta"].get("extensions", {}).get("extraction_limitations", []))
         for node in document["nodes"]:
             merged_node = _with_language(node, component_language)
             builder.add_node(merged_node)
@@ -179,7 +181,7 @@ def analyze_repository(
         "generated_at": None if deterministic else datetime.now(UTC).isoformat(),
         "deterministic": deterministic,
         "settings": active_config.to_dict(),
-        "extensions": {"analyzers": analyzers},
+        "extensions": {"analyzers": analyzers, "extraction_limitations": sorted(extraction_limitations)},
     }
     document = builder.document(meta)
     validate_document(document)
@@ -209,7 +211,7 @@ def _run_child(
 
 
 def _child_config(config: AnalysisConfig, language: str, languages: tuple[str, ...]) -> AnalysisConfig:
-    return AnalysisConfig(
+    child = AnalysisConfig(
         language=language,
         languages=list(languages) if language in {"web", "c-family", "mixed"} else [],
         include_tests=config.include_tests,
@@ -221,6 +223,12 @@ def _child_config(config: AnalysisConfig, language: str, languages: tuple[str, .
         generated=list(config.generated),
         context=dict(config.context),
     )
+    # Shell and SQL presets deliberately run the same source through several
+    # dialects. Shared C-family/Objective-C/Matlab suffixes instead need one
+    # owner, determined using the parent's complete language selection.
+    if language not in {"bash", "posix-shell", *_SQL_ANALYZERS}:
+        child._discovery_languages = config._discovery_languages or config.active_languages()
+    return child
 
 
 def _with_language(node: dict[str, Any], component_language: str) -> dict[str, Any]:

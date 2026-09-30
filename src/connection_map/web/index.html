@@ -17,6 +17,7 @@
         <select id="repository-selector" class="repository-selector" aria-label="解析対象リポジトリ" hidden></select>
         <span id="validation-status" class="validation-status" hidden></span>
         <span id="stats" class="stats"></span>
+        <button id="exploration-back" type="button" disabled>戻る</button>
         <button id="fit-view" type="button">全体を表示</button>
         <button id="reset-view" type="button">表示をリセット</button>
         <details id="layout-tools" class="toolbar-menu" open>
@@ -37,6 +38,21 @@
         <input id="search" type="search" placeholder="関数・クラス・ファイル・ID" autocomplete="off">
         <div id="search-results" class="result-list" aria-live="polite"></div>
 
+        <section class="exploration-controls" aria-label="周辺の接続">
+          <h2>周辺の接続</h2>
+          <label>方向<select id="context-direction"><option value="both">両方向</option><option value="in">入ってくる接続</option><option value="out">出ていく接続</option></select></label>
+          <label>関係<select id="context-relation"><option value="">包含以外すべて</option><option value="calls">呼び出し</option><option value="imports">読み込み</option><option value="dynamic_imports">動的読み込み</option><option value="handles">イベント処理</option><option value="requests">HTTPリクエスト</option><option value="registers">処理の登録</option><option value="references">参照</option><option value="inherits">継承</option><option value="contains">包含</option></select></label>
+          <label>深さ<select id="context-depth"><option value="1">1段</option><option value="2">2段</option><option value="3">3段</option></select></label>
+          <label>解決状態<select id="context-resolution"><option value="all">すべて（未解決も表示）</option><option value="resolved">解決済み</option><option value="unresolved">未解決・候補</option><option value="external">外部</option><option value="unsupported">未対応</option></select></label>
+          <p class="muted">ノードを選ぶと周辺を表示します。最大60ノード・120接続。</p>
+        </section>
+
+        <section aria-label="解析範囲と鮮度">
+          <h2>解析範囲と鮮度</h2>
+          <div id="quality-summary" aria-live="polite">確認中…</div>
+          <button id="refresh-quality" type="button">ソースの変更を確認</button>
+        </section>
+
         <section class="language-filter-panel" aria-labelledby="language-filter-title">
           <h2 id="language-filter-title">表示言語</h2>
           <div id="language-filter" class="language-filter" role="group" aria-label="表示する開発言語"></div>
@@ -44,6 +60,13 @@
 
         <details id="diagnostics-section" class="panel-section">
           <summary id="diagnostics-summary">解析診断</summary>
+          <div class="diagnostic-controls">
+            <label>重大度<select id="diagnostic-severity"><option value="all">すべて</option><option value="error">エラー</option><option value="warning">警告</option><option value="info">情報</option></select></label>
+            <label>ファイル<input id="diagnostic-file" type="search" placeholder="パスで絞り込み"></label>
+            <p id="diagnostic-count" class="muted" aria-live="polite"></p>
+            <button id="diagnostic-prev" disabled>前の200件</button>
+            <button id="diagnostic-next" disabled>続きの200件</button>
+          </div>
           <div id="diagnostics" class="diagnostics-list" aria-live="polite"></div>
         </details>
 
@@ -83,6 +106,7 @@
         <div class="empty-details">ノードまたは線を選択すると詳細が表示されます。</div>
       </aside>
     </main>
+    <script src="exploration.js" defer></script>
     <script src="app.js" defer></script>
     <script src="benchmark.js" defer></script>
   </body>

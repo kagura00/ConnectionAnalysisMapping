@@ -43,6 +43,8 @@
     exports: { color: "#a78bfa", dash: [3, 3], head: "triangle" },
     references: { color: "#f472b6", dash: [5, 3], head: "diamond" },
     handles: { color: "#fb7185", dash: [8, 4], head: "diamond" },
+    registers: { color: "#a78bfa", dash: [], head: "triangle" },
+    requests: { color: "#22d3ee", dash: [6, 4], head: "triangle" },
     styles: { color: "#fb923c", dash: [2, 3], head: "triangle" },
     reads: { color: "#60a5fa", dash: [6, 3], head: "triangle" },
     writes: { color: "#f97316", dash: [], head: "triangle" },
@@ -74,6 +76,8 @@
     exports: "公開",
     references: "参照",
     handles: "イベント処理",
+    registers: "処理の登録",
+    requests: "HTTPリクエスト",
     styles: "スタイル適用",
     reads: "読み取り",
     writes: "書き込み",
@@ -181,6 +185,14 @@
     activeRepositoryId: null,
     repositoryRequestId: 0,
     document: null,
+    layoutBase: null,
+    contextResult: null,
+    contextNodes: new Map(),
+    contextPositions: new Map(),
+    focusActive: false,
+    overviewCamera: null,
+    queryApiAvailable: null,
+    navigationHistory: [],
     bundle: null,
     nodes: [],
     edges: [],
@@ -228,6 +240,11 @@
     diagnosticsLoaded: false,
     diagnosticsTruncated: false,
     diagnosticsLoading: null,
+    diagnosticPage: null,
+    diagnosticOffset: 0,
+    diagnosticRequestId: 0,
+    diagnosticChunkCursor: 0,
+    staticDiagnostics: [],
     selectionRequestId: 0,
     selectionLoad: null,
     availableLanguages: [],
@@ -835,6 +852,7 @@
       throw new Error("layout.json の camera が不正です");
     }
     state.layoutOverrides.clear();
+    state.layoutBase = JSON.parse(JSON.stringify(layout));
     positions.forEach(([nodeId, position]) => {
       const override = { x: position.x, y: position.y };
       state.layoutOverrides.set(nodeId, override);
@@ -854,6 +872,7 @@
     // A repository switch must not reuse unsaved coordinates or camera state
     // from a different graph when that repository has no layout snapshot.
     state.layoutOverrides.clear();
+    resetExploration();
     state.camera = { x: 0, y: 0, zoom: 1 };
     state.bundle = null;
     state.document = document;
@@ -888,6 +907,7 @@
     setDetailsOpen(window.innerWidth > 1000);
     if (hasLayoutCamera) draw();
     else fitView();
+    void refreshQuality();
   }
 
   function setupBundle(index, overview, layout) {
@@ -895,6 +915,7 @@
     // Layouts are repository-scoped; clear the previous session before
     // building positions so a missing layout starts from a clean fit view.
     state.layoutOverrides.clear();
+    resetExploration();
     state.camera = { x: 0, y: 0, zoom: 1 };
     state.loadedNodeChunks.clear();
     state.loadedEdgeChunks.clear();
@@ -1005,6 +1026,7 @@
     setDetailsOpen(window.innerWidth > 1000);
     if (hasLayoutCamera) draw();
     else fitView();
+    void refreshQuality();
   }
 
   function diagnosticSeverityRank(severity) {
@@ -1042,15 +1064,17 @@
       diagnosticsElement.append(emptyList("開くと診断の詳細を読み込みます。"));
       return;
     }
-    if (!state.diagnostics.length) {
-      diagnosticsElement.append(emptyList("診断はありません"));
-      return;
+    const filters = diagnosticFilters();
+    const page = state.diagnosticPage || ConnectionMapExploration.diagnosticPage(state.diagnostics, filters);
+    const { diagnostics: ordered, offset, total, next_offset: nextOffset } = page;
+    document.getElementById("diagnostic-count").textContent = `${total ? offset + 1 : 0}〜${Math.min(offset + ordered.length, total)} / ${total}件${state.diagnosticsTruncated ? "（静的表示：未読込の診断あり）" : ""}`;
+    document.getElementById("diagnostic-prev").disabled = offset === 0;
+    document.getElementById("diagnostic-next").disabled = nextOffset === null && !state.diagnosticsTruncated;
+    if (!ordered.length) {
+        diagnosticsElement.append(emptyList("診断はありません"));
+        return;
     }
-    const ordered = state.diagnostics
-      .slice()
-      .sort((left, right) => diagnosticSeverityRank(left.severity) - diagnosticSeverityRank(right.severity));
-    const limit = 200;
-    ordered.slice(0, limit).forEach((diagnostic) => {
+    ordered.forEach((diagnostic) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = `diagnostic-item severity-${diagnostic.severity || "info"}`;
@@ -1065,41 +1089,63 @@
       button.addEventListener("click", () => { void focusDiagnostic(diagnostic); });
       diagnosticsElement.append(button);
     });
-    if (ordered.length > limit || state.diagnosticsTruncated) {
+    if (state.diagnosticsTruncated) {
       const note = document.createElement("div");
       note.className = "empty-list";
-      note.textContent = state.diagnosticsTruncated
-        ? `先頭${formatNumber(Math.min(limit, ordered.length))}件を表示（診断チャンクの読み込み上限）`
-        : `先頭${formatNumber(limit)}件を表示（全${formatNumber(ordered.length)}件）`;
+      note.textContent = "続きのボタンで追加の診断を読み込みます。全体の重大度順で表示するにはローカルサーバーを使用してください。";
       diagnosticsElement.append(note);
     }
   }
 
-  async function loadBundleDiagnostics() {
-    if (!state.bundle || state.diagnosticsLoaded) return;
-    if (state.diagnosticsLoading) return state.diagnosticsLoading;
+  function diagnosticFilters() {
+    return { severity: document.getElementById("diagnostic-severity").value,
+      file: document.getElementById("diagnostic-file").value, offset: state.diagnosticOffset, limit: 200 };
+  }
+
+  async function loadBundleDiagnostics(offset = 0) {
+    state.diagnosticOffset = offset;
+    const requestId = ++state.diagnosticRequestId;
     const repositoryGeneration = state.repositoryRequestId;
+    const filters = diagnosticFilters();
     state.diagnosticsLoading = (async () => {
       try {
-        const diagnostics = [];
-        const entries = state.bundle.diagnosticChunkEntries;
-        for (let index = 0; index < entries.length && index < MAX_DIAGNOSTIC_CHUNKS; index += 1) {
-          const entry = entries[index];
-          diagnostics.push(...await fetchJson(`bundle/${entry.path}`, `diagnostics:${index}`));
-          if (diagnostics.length >= 200) break;
+        const response = await fetch(`${dataUrl("diagnostics")}?${new URLSearchParams(filters)}`, { cache: "no-store" });
+        if (repositoryGeneration !== state.repositoryRequestId || requestId !== state.diagnosticRequestId) return;
+        let page;
+        let truncated = false;
+        if (response.ok) {
+          page = await response.json();
+          if (state.bundle && page.analysis_sha256 !== state.bundle.index.analysis_sha256) throw new Error("解析結果の版が一致しません");
+        } else if (response.status === 404) {
+          if (state.bundle) {
+            const entries = state.bundle.diagnosticChunkEntries;
+            const pending = [];
+            const end = Math.min(entries.length, state.diagnosticChunkCursor + MAX_DIAGNOSTIC_CHUNKS);
+            for (let index = state.diagnosticChunkCursor; index < end; index += 1) {
+              pending.push(...await fetchJson(`bundle/${entries[index].path}`, `diagnostics:${index}`));
+            }
+            if (repositoryGeneration !== state.repositoryRequestId || requestId !== state.diagnosticRequestId) return;
+            state.staticDiagnostics.push(...pending);
+            state.diagnosticChunkCursor = end;
+            truncated = end < entries.length;
+          }
+          page = ConnectionMapExploration.diagnosticPage(state.bundle ? state.staticDiagnostics : state.document.diagnostics, filters);
+        } else {
+          throw new Error(`HTTP ${response.status}`);
         }
-        state.diagnostics = diagnostics;
-        state.diagnosticsTruncated = diagnostics.length < state.document.meta.counts.diagnostics;
-        state.document.diagnostics = state.diagnostics;
+        if (repositoryGeneration !== state.repositoryRequestId || requestId !== state.diagnosticRequestId) return;
+        state.diagnosticsTruncated = truncated;
+        state.diagnosticPage = page;
+        state.diagnostics = page.diagnostics;
         state.diagnosticsLoaded = true;
         renderDiagnostics();
         setStats();
       } catch (error) {
-        if (repositoryGeneration !== state.repositoryRequestId) return;
+        if (repositoryGeneration !== state.repositoryRequestId || requestId !== state.diagnosticRequestId) return;
         diagnosticsElement?.replaceChildren(emptyList("診断の読み込みに失敗しました"));
         setStatus(`診断の読み込みに失敗しました: ${error.message}`, true);
       } finally {
-        if (repositoryGeneration === state.repositoryRequestId) state.diagnosticsLoading = null;
+        if (repositoryGeneration === state.repositoryRequestId && requestId === state.diagnosticRequestId) state.diagnosticsLoading = null;
       }
     })();
     return state.diagnosticsLoading;
@@ -1632,6 +1678,7 @@
   }
 
   function fitView() {
+    if (state.focusActive) { fitContext(); return; }
     if (!state.nodes.length) return;
     const positions = state.nodes
       .filter((node) => isNodeLanguageVisible(node))
@@ -1747,6 +1794,7 @@
     // Resize events can fire before the analysis document finishes loading.
     // Keep the canvas blank until setupDocument has initialized the indexes.
     if (!state.document) return;
+    if (state.focusActive && state.contextResult) { drawContext(); return; }
     cancelEdgeRender();
     context.clearRect(0, 0, state.width, state.height);
     drawGrid();
@@ -1923,7 +1971,7 @@
     const { screen, width, height, isCompact } = metrics;
     const color = NODE_COLORS[node.kind] || "#94a3b8";
     context.save();
-    context.globalAlpha = state.selectedNodeId && state.selectedNodeId !== node.id ? 0.35 : 1;
+    context.globalAlpha = !state.focusActive && state.selectedNodeId && state.selectedNodeId !== node.id ? 0.35 : 1;
     context.fillStyle = "#14213a";
     context.strokeStyle = state.selectedNodeId === node.id ? "#f8fafc" : color;
     context.lineWidth = state.selectedNodeId === node.id ? 3 : 1.5;
@@ -1951,7 +1999,7 @@
   }
 
   function nodeMetrics(node) {
-    const position = state.positionById.get(node.id);
+    const position = (state.focusActive ? state.contextPositions : state.positionById).get(node.id);
     if (!position) return null;
     const isCompact = state.camera.zoom < NODE_LABEL_ZOOM;
     return {
@@ -2173,8 +2221,233 @@
     }
   }
 
-  async function selectNode(nodeId, center) {
+  function resetExploration() {
+    state.diagnosticPage = null;
+    state.diagnosticOffset = 0;
+    state.diagnosticRequestId += 1;
+    state.diagnosticChunkCursor = 0;
+    state.staticDiagnostics = [];
+    state.layoutBase = null;
+    state.contextResult = null;
+    state.contextNodes.clear();
+    state.contextPositions.clear();
+    state.focusActive = false;
+    state.overviewCamera = null;
+    state.queryApiAvailable = null;
+    state.navigationHistory = [];
+    document.getElementById("exploration-back").disabled = true;
+  }
+
+  function lookupNode(nodeId) {
+    return state.contextNodes.get(nodeId) || state.nodeById.get(nodeId);
+  }
+
+  function renderQuality(payload) {
+    const element = document.getElementById("quality-summary");
+    const freshness = payload.freshness || {};
+    const coverage = payload.coverage || {};
+    const labels = { current: "対象ソースは一致", stale: "ソース変更あり・再解析が必要", unknown: "ソースの鮮度は不明", unchecked: "ソースの鮮度は未確認" };
+    const status = document.createElement("p");
+    status.className = freshness.status === "stale" || coverage.status === "partial" ? "quality-warning" : "muted";
+    status.textContent = labels[freshness.status] || "ソースの鮮度は未確認";
+    const counts = freshness.change_counts;
+    if (counts && freshness.status === "stale") status.textContent += `（追加${counts.added}・変更${counts.modified}・削除${counts.deleted}）`;
+    const range = document.createElement("p");
+    range.className = "muted";
+    const tests = coverage.tests_included === true ? "含む" : coverage.tests_included === false ? "含まない" : "不明";
+    const coverageLabel = { completed: "完了（静的解析）", partial: "部分的・要確認", unknown: "不明" }[coverage.status] || "不明";
+    range.textContent = `対象${coverage.selected_file_count ?? "?"}ファイル / エラー${coverage.error_count ?? "?"}件 / テスト: ${tests} / 解析: ${coverageLabel}`;
+    const note = document.createElement("p");
+    note.className = "muted";
+    note.textContent = `${freshness.typescript_context_verified ? "対象ソースと読み込んだTypeScript設定を照合しました。" : "保存された設定で選んだソースを照合します。"}その他の外部設定や動的な接続は別途確認してください。接続がないことは、依存がない証明にはなりません。`;
+    const limitations = document.createElement("details");
+    limitations.className = "quality-warning";
+    const summary = document.createElement("summary");
+    summary.textContent = `未対応ソース: ${coverage.unsupported_source_files?.length || 0}件 / 解析上の制約: ${coverage.extraction_limitations?.length || 0}件 / 照合するTS設定: ${coverage.context_file_count || 0}件`;
+    const limitationList = document.createElement("ul");
+    for (const text of [...(coverage.extraction_limitations || []), ...(coverage.unsupported_source_files || [])]) {
+      const item = document.createElement("li");
+      item.textContent = text;
+      limitationList.append(item);
+    }
+    limitations.append(summary, limitationList);
+    element.replaceChildren(status, range, limitations, note);
+  }
+
+  async function refreshQuality() {
+    const requestId = state.repositoryRequestId;
+    try {
+      const response = await fetch(dataUrl("quality"), { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json();
+      if (requestId === state.repositoryRequestId) renderQuality(payload);
+    } catch (_error) {
+      if (requestId === state.repositoryRequestId) renderQuality({ coverage: state.document?.meta?.extensions?.coverage });
+    }
+  }
+
+  async function selectContext(nodeId, requestId) {
+    const params = new URLSearchParams({
+      node: nodeId, direction: document.getElementById("context-direction").value,
+      depth: document.getElementById("context-depth").value,
+      resolution: document.getElementById("context-resolution").value,
+      max_nodes: "60", max_edges: "120",
+    });
+    const relation = document.getElementById("context-relation").value;
+    if (relation) params.set("relation", relation);
+    setStatus("周辺の接続を確認しています…");
+    const response = await fetch(`${dataUrl("context")}?${params}`, { cache: "no-store" });
+    if (requestId !== state.selectionRequestId) return true;
+    if (response.status === 404) { state.queryApiAvailable = false; return false; }
+    if (!response.ok) throw new Error(`周辺の接続 HTTP ${response.status}`);
+    const result = await response.json();
+    if (requestId !== state.selectionRequestId) return true;
+    if (state.bundle && result.analysis_sha256 !== state.bundle.index.analysis_sha256) throw new Error("解析結果の版が一致しません");
+    state.queryApiAvailable = true;
+    state.contextResult = result;
+    state.contextNodes = new Map(result.nodes.map((node) => [node.id, node]));
+    state.contextPositions = ConnectionMapExploration.contextPositions(result);
+    indexNodeLanguages(result.nodes);
+    if (!state.focusActive) state.overviewCamera = { ...state.camera };
+    state.focusActive = true;
+    state.selectedNodeId = nodeId;
+    state.selectedEdgeId = null;
+    state.selectionLoad = null;
+    renderQuality(result);
+    renderNodeDetails(state.contextNodes.get(nodeId));
+    setDetailsOpen(true);
+    fitContext();
+    setStatus(`周辺を表示中 · ${result.nodes.length}ノード / ${result.edges.length}接続${result.truncation.budget_limited ? " · 上限で省略あり" : ""}`);
+    return true;
+  }
+
+  function fitContext() {
+    const points = [...state.contextPositions.values()];
+    if (!points.length) return;
+    const minX = Math.min(...points.map((p) => p.x)), maxX = Math.max(...points.map((p) => p.x));
+    const minY = Math.min(...points.map((p) => p.y)), maxY = Math.max(...points.map((p) => p.y));
+    state.camera = { x: (minX + maxX) / 2, y: (minY + maxY) / 2,
+      zoom: Math.max(ZOOM_MIN, Math.min(1.2, state.width / (maxX - minX + 300), state.height / (maxY - minY + 160))) };
+    draw();
+  }
+
+  function drawContext() {
+    cancelEdgeRender();
+    context.clearRect(0, 0, state.width, state.height);
+    drawGrid();
+    state.visibleNodes = state.contextResult.nodes.filter(isNodeLanguageVisible);
+    const visible = new Set(state.visibleNodes.map((node) => node.id));
+    state.visibleEdges = [];
+    state.contextResult.edges.forEach((edge) => {
+      if (!visible.has(edge.source_id) || !visible.has(edge.target_id)) return;
+      const start = worldToScreen(state.contextPositions.get(edge.source_id));
+      const end = worldToScreen(state.contextPositions.get(edge.target_id));
+      drawEdge(edge, start, end, 1);
+      state.visibleEdges.push({ edge, sourceId: edge.source_id, targetId: edge.target_id, start, end, count: 1 });
+    });
+    state.visibleNodes.forEach(drawNode);
+    statsElement.textContent = `周辺 ${state.visibleNodes.length}ノード / ${state.visibleEdges.length}接続`;
+  }
+
+  function appendAnnotations(nodeId = null, edgeId = null) {
+    const annotations = ConnectionMapExploration.annotationsFor(state.layoutBase, state.document?.meta, nodeId, edgeId);
+    if (!annotations.length) return;
+    const heading = document.createElement("h2");
+    heading.textContent = `注釈（${annotations.length}件）`;
+    detailsElement.append(heading);
+    annotations.slice(0, 50).forEach((note) => {
+      const paragraph = document.createElement("p");
+      paragraph.className = "annotation-text";
+      paragraph.textContent = typeof note.text === "string" ? note.text : JSON.stringify(note);
+      detailsElement.append(paragraph);
+    });
+    if (annotations.length > 50) detailsElement.append(emptyList("注釈表示は50件までです。保存時はすべて保持します。"));
+  }
+
+  function appendContextDetails(node) {
+    const result = state.contextResult;
+    if (!result || result.focus_id !== node.id) return;
+    const save = document.createElement("button");
+    save.textContent = "AI用JSONを保存";
+    save.addEventListener("click", async () => {
+      const params = new URLSearchParams({ node: result.focus_id, direction: result.query.direction,
+        depth: String(result.query.depth), resolution: result.query.resolution,
+        max_nodes: String(result.query.max_nodes), max_edges: String(result.query.max_edges) });
+      (result.query.relations || []).forEach((relation) => params.append("relation", relation));
+      try {
+        const response = await fetch(`${dataUrl("context")}?${params}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        downloadJson(await response.json(), "connection-context.json");
+      } catch (error) { setStatus(`JSONの保存に失敗しました: ${error.message}`, true); }
+    });
+    detailsElement.append(save);
+    if (node.file) {
+      const copy = document.createElement("button");
+      copy.textContent = "ソース位置をコピー";
+      const location = `${node.file}:${node.span?.start_line || 1}`;
+      copy.title = location;
+      copy.addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText(location); setStatus(`コピーしました: ${location}`); }
+        catch (_error) { setStatus(`ソース位置: ${location}`); }
+      });
+      detailsElement.append(copy);
+    }
+    const truncation = result.truncation;
+    if (Object.values(truncation).some(Boolean)) {
+      detailsElement.append(emptyList(`表示範囲: 深さ${result.query.depth}段${truncation.budget_limited ? " / 件数上限で省略あり" : ""}${truncation.depth_limited ? " / この先にも接続あり" : ""}${truncation.diagnostics ? " / 診断の省略あり" : ""}`));
+    }
+    for (const direction of ["in", "out"]) {
+      if ((direction === "in" && result.query.direction === "out") || (direction === "out" && result.query.direction === "in")) continue;
+      const edges = result.edges.filter((edge) => (direction === "in" ? edge.target_id : edge.source_id) === node.id);
+      const heading = document.createElement("h2");
+      heading.textContent = `${direction === "in" ? "入ってくる接続" : "出ていく接続"}（${edges.length}件）`;
+      detailsElement.append(heading);
+      if (!edges.length) detailsElement.append(emptyList("指定範囲では観測されていません。"));
+      edges.forEach((edge) => {
+        const target = lookupNode(direction === "in" ? edge.source_id : edge.target_id);
+        const row = document.createElement("div");
+        row.className = "context-relation";
+        const button = document.createElement("button");
+        button.textContent = target ? target.qualified_name || nodeLabel(target) : "位置不明";
+        if (target?.file) button.title = target.file;
+        button.addEventListener("click", () => { if (target) void selectNode(target.id, true); });
+        const evidence = document.createElement("p");
+        evidence.className = "muted";
+        const candidateLabel = edge.detail?.resolution_basis === "http_endpoint_candidate" ? "（HTTPメソッド・パス一致の候補）" : "（候補）";
+        evidence.textContent = `${edgeLabel(edge.relation_type)} · ${resolutionLabel(edge.resolution_status)}${edge.detail?.candidate_target_id ? candidateLabel : ""} · ${edge.source_file || "位置不明"}:${edge.source_span?.start_line || "?"}`;
+        const detail = document.createElement("button");
+        detail.textContent = "接続の根拠";
+        detail.addEventListener("click", () => { void selectEdge(edge); });
+        row.append(button, evidence, detail);
+        detailsElement.append(row);
+      });
+    }
+  }
+
+  function downloadJson(value, name) {
+    const url = URL.createObjectURL(new Blob([`${JSON.stringify(value, null, 2)}\n`], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  async function selectNode(nodeId, center, remember = true) {
+    const previous = state.selectedNodeId || state.contextResult?.focus_id;
+    if (remember && previous && previous !== nodeId) {
+      state.navigationHistory.push(previous);
+      if (state.navigationHistory.length > 50) state.navigationHistory.shift();
+      document.getElementById("exploration-back").disabled = false;
+    }
     const selectionRequestId = ++state.selectionRequestId;
+    if (state.queryApiAvailable !== false) {
+      try { if (await selectContext(nodeId, selectionRequestId)) return; }
+      catch (error) {
+        if (selectionRequestId === state.selectionRequestId) setStatus(`周辺の取得に失敗しました: ${error.message}`, true);
+        return;
+      }
+    }
     const hint = state.searchNodeHints.get(nodeId);
     const moduleIds = [...moduleIdsForNodeId(nodeId)];
     const moduleId = moduleIds[0] || hint?.moduleId;
@@ -2228,6 +2501,14 @@
     const selectionRequestId = ++state.selectionRequestId;
     const edge = item?.edge || item;
     if (!edge) return;
+    if (state.focusActive) {
+      state.selectedNodeId = null;
+      state.selectedEdgeId = edge.id;
+      renderEdgeDetails(edge);
+      setDetailsOpen(true);
+      draw();
+      return;
+    }
     const sourceId = item?.sourceId || edge.source_id;
     const targetId = item?.targetId || edge.target_id;
     const moduleIds = [...new Set([
@@ -2271,6 +2552,7 @@
     state.selectedNodeId = null;
     state.selectedEdgeId = null;
     state.selectionLoad = null;
+    state.focusActive = false;
     state.pinnedNodeIds.clear();
     state.focusedModuleIds.clear();
     detailsElement.replaceChildren(detailsHeader("詳細"), emptyList("ノードまたは線を選択すると詳細が表示されます。"));
@@ -2317,10 +2599,12 @@
     const loadControl = selectionLoadControl();
     if (loadControl) detailsElement.append(loadControl);
     if (node.signature) detailsElement.append(codeBlock(node.signature));
+    appendAnnotations(node.id);
+    appendContextDetails(node);
   }
 
   function canNavigateToNode(nodeId) {
-    return state.nodeById.has(nodeId) || Boolean(state.searchNodeHints.get(nodeId)) || Boolean(moduleIdForNodeId(nodeId));
+    return state.contextNodes.has(nodeId) || state.nodeById.has(nodeId) || Boolean(state.searchNodeHints.get(nodeId)) || Boolean(moduleIdForNodeId(nodeId));
   }
 
   function appendNodeNavigation(container, label, nodeId, node) {
@@ -2356,15 +2640,15 @@
     } else {
       detailsElement.append(title);
     }
-    const source = state.nodeById.get(displaySourceId);
-    const target = state.nodeById.get(displayTargetId);
-    const originalSource = state.nodeById.get(edge.source_id);
-    const originalTarget = state.nodeById.get(edge.target_id);
+    const source = lookupNode(displaySourceId);
+    const target = lookupNode(displayTargetId);
+    const originalSource = lookupNode(edge.source_id);
+    const originalTarget = lookupNode(edge.target_id);
     const fields = [
       ["元ノード", source ? nodeLabel(source) : displaySourceId],
       ["先ノード", target ? nodeLabel(target) : displayTargetId],
       ["状態", resolutionLabel(edge.resolution_status)],
-      ["確度", edgeConfidenceLabel(edge)],
+      ["推定スコア（確率ではありません）", edgeConfidenceLabel(edge)],
       ["出典", provenanceLabel(edge.provenance)],
       ["位置", formatSpan(edge.source_span)],
       ["識別子", edge.id],
@@ -2391,6 +2675,7 @@
     if (displayTargetId !== edge.target_id) appendNodeNavigation(navigation, "表示上の接続先", displayTargetId, state.nodeById.get(displayTargetId));
     detailsElement.append(navigation);
     if (edge.detail) detailsElement.append(codeBlock(JSON.stringify(edge.detail, null, 2)));
+    appendAnnotations(null, edge.id);
   }
 
   function detailGrid(fields) {
@@ -2429,16 +2714,8 @@
   }
 
   function buildLayoutDocument() {
-    return {
-      format: "connection-analysis-layout",
-      schema_version: "1.0",
-      analysis_schema_version: state.document.schema_version,
-      camera: { ...state.camera },
-      nodes: Object.fromEntries(
-        [...state.layoutOverrides.entries()].map(([nodeId, position]) => [nodeId, { x: position.x, y: position.y }]),
-      ),
-      annotations: [],
-    };
+    return ConnectionMapExploration.buildLayout(state.layoutBase, state.document.schema_version,
+      state.focusActive ? state.overviewCamera || state.camera : state.camera, state.layoutOverrides);
   }
 
   function saveLayout() {
@@ -2459,11 +2736,19 @@
     try {
       const layout = JSON.parse(await file.text());
       const hasLayoutCamera = applyLayout(layout);
+      state.focusActive = false;
+      state.overviewCamera = null;
       if (!hasLayoutCamera) {
         state.camera = { x: 0, y: 0, zoom: 1 };
         fitView();
       } else {
         draw();
+      }
+      if (state.selectedNodeId && lookupNode(state.selectedNodeId)) renderNodeDetails(lookupNode(state.selectedNodeId));
+      else if (state.selectedEdgeId) {
+        const edge = state.contextResult?.edges.find((item) => item.id === state.selectedEdgeId)
+          || state.edges.find((item) => item.id === state.selectedEdgeId);
+        if (edge) renderEdgeDetails(edge);
       }
       setStatus(`レイアウトを読み込みました: ${file.name}`);
     } catch (error) {
@@ -2526,11 +2811,11 @@
     const dy = point.y - state.pointer.lastY;
     if (Math.abs(point.x - state.pointer.x) + Math.abs(point.y - state.pointer.y) > 3) state.pointer.moved = true;
     if (state.pointer.dragNodeId) {
-      const position = state.positionById.get(state.pointer.dragNodeId);
+      const position = (state.focusActive ? state.contextPositions : state.positionById).get(state.pointer.dragNodeId);
       if (position) {
         position.x += dx / state.camera.zoom;
         position.y += dy / state.camera.zoom;
-        state.layoutOverrides.set(state.pointer.dragNodeId, { x: position.x, y: position.y });
+        if (!state.focusActive) state.layoutOverrides.set(state.pointer.dragNodeId, { x: position.x, y: position.y });
       }
     } else {
       state.camera.x -= dx / state.camera.zoom;
@@ -2552,7 +2837,7 @@
       draw();
       return;
     }
-    const node = pointer.dragNodeId ? state.nodeById.get(pointer.dragNodeId) : hitTestNode(point.x, point.y);
+    const node = pointer.dragNodeId ? lookupNode(pointer.dragNodeId) : hitTestNode(point.x, point.y);
     if (node) { selectNode(node.id, false); return; }
     const edge = hitTestEdge(point.x, point.y);
     if (edge) { void selectEdge(edge); return; }
@@ -2581,11 +2866,35 @@
 
   canvas.addEventListener("keydown", (event) => { if (event.key === "Escape") clearSelection(); });
   searchElement.addEventListener("input", () => renderSearchResults(searchElement.value));
-  document.getElementById("fit-view").addEventListener("click", fitView);
+  document.getElementById("fit-view").addEventListener("click", () => { state.focusActive = false; fitView(); });
+  document.getElementById("exploration-back").addEventListener("click", () => {
+    const previous = state.navigationHistory.pop();
+    document.getElementById("exploration-back").disabled = state.navigationHistory.length === 0;
+    if (previous) void selectNode(previous, true, false);
+  });
+  ["context-direction", "context-relation", "context-depth", "context-resolution"].forEach((id) => {
+    document.getElementById(id).addEventListener("change", () => {
+      const nodeId = state.selectedNodeId || state.contextResult?.focus_id;
+      if (nodeId) void selectNode(nodeId, true, false);
+    });
+  });
+  document.getElementById("refresh-quality").addEventListener("click", () => { void refreshQuality(); });
   document.getElementById("reset-view").addEventListener("click", () => { state.camera = { x: 0, y: 0, zoom: 1 }; fitView(); });
   toggleDetailsElement.addEventListener("click", () => setDetailsOpen(!detailsElement.classList.contains("is-open")));
   diagnosticsSection.addEventListener("toggle", () => {
     if (diagnosticsSection.open) void loadBundleDiagnostics();
+  });
+  document.getElementById("diagnostic-severity").addEventListener("change", () => { void loadBundleDiagnostics(); });
+  let diagnosticSearchTimer;
+  document.getElementById("diagnostic-file").addEventListener("input", () => {
+    clearTimeout(diagnosticSearchTimer);
+    diagnosticSearchTimer = setTimeout(() => { void loadBundleDiagnostics(); }, 200);
+  });
+  document.getElementById("diagnostic-prev").addEventListener("click", () => {
+    void loadBundleDiagnostics(Math.max(0, state.diagnosticOffset - 200));
+  });
+  document.getElementById("diagnostic-next").addEventListener("click", () => {
+    void loadBundleDiagnostics(state.diagnosticPage?.next_offset ?? (state.diagnosticsTruncated ? 0 : state.diagnosticOffset));
   });
   detailsElement.addEventListener("click", (event) => {
     if (event.target.closest("#close-details")) setDetailsOpen(false);
@@ -2630,7 +2939,7 @@
 
   function renderValidationStatus(validation) {
     if (!validationStatusElement) return;
-    const labels = { pending: "検証待ち", running: "全量検証中", valid: "検証済み", invalid: "検証失敗", cancelled: "検証中止" };
+    const labels = { pending: "検証待ち", running: "全量検証中", valid: "ファイル整合性OK", invalid: "検証失敗", cancelled: "検証中止" };
     const status = validation?.status || "pending";
     validationStatusElement.hidden = !state.workspaceMode;
     validationStatusElement.className = `validation-status validation-${status}`;
@@ -2639,6 +2948,7 @@
   }
 
   function resetRepositoryView() {
+    resetExploration();
     resetChunkCache();
     state.loadedNodeChunks.clear();
     state.loadedEdgeChunks.clear();

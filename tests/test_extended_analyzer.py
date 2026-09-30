@@ -183,7 +183,8 @@ def test_extended_calls_ignore_comments_and_strings_and_mark_profile_edges(tmp_p
     document = analyze_repository(tmp_path, AnalysisConfig(language="lua"), deterministic=True, commit_sha="negative-call")
     calls = [edge for edge in document["edges"] if edge["relation_type"] == "calls"]
     assert len(calls) == 1
-    assert calls[0]["resolution_status"] == "resolved"
+    assert calls[0]["resolution_status"] == "unresolved"
+    assert calls[0]["detail"]["candidate_target_id"] == calls[0]["target_id"]
     assert calls[0]["provenance"] == "unknown"
     assert calls[0]["detail"]["expression"] == "helper(...)"
 
@@ -233,7 +234,7 @@ def test_haskell_function_application_is_a_call_relationship(tmp_path: Path) -> 
     document = analyze_repository(tmp_path, AnalysisConfig(language="haskell"), deterministic=True, commit_sha="haskell-call")
     calls = [edge for edge in document["edges"] if edge["relation_type"] == "calls"]
     assert any(
-        edge["resolution_status"] == "resolved" and edge["detail"]["expression"] == "helper(...)"
+        edge["resolution_status"] == "unresolved" and edge["detail"]["expression"] == "helper(...)"
         for edge in calls
     )
 
@@ -277,7 +278,8 @@ def test_cobol_fixed_format_comment_does_not_create_a_call(tmp_path: Path) -> No
     document = analyze_repository(tmp_path, AnalysisConfig(language="cobol"), deterministic=True, commit_sha="cobol-comment")
     calls = [edge for edge in document["edges"] if edge["relation_type"] == "calls"]
     assert len(calls) == 1
-    assert calls[0]["resolution_status"] == "resolved"
+    assert calls[0]["resolution_status"] == "unresolved"
+    assert calls[0]["detail"]["candidate_target_id"] == calls[0]["target_id"]
 
 
 def test_matlab_and_objective_c_m_suffixes_are_disambiguated(tmp_path: Path) -> None:
@@ -308,7 +310,7 @@ def test_objective_c_multi_selector_call_keeps_a_method_connection(tmp_path: Pat
 
     document = analyze_repository(tmp_path, AnalysisConfig(language="objective-c"), deterministic=True)
     calls = [edge for edge in document["edges"] if edge["relation_type"] == "calls"]
-    assert any(edge["resolution_status"] == "resolved" for edge in calls)
+    assert any(edge["resolution_status"] == "unresolved" and edge["detail"]["candidate_target_id"] for edge in calls)
 
 
 def test_objective_c_distinguishes_multi_selector_declarations(tmp_path: Path) -> None:

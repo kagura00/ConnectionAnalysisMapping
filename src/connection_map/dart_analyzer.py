@@ -8,6 +8,7 @@ from typing import Any
 
 from .config import AnalysisConfig
 from .contract import validate_document
+from .dart_bindings import DartBindings, call_parts, local_uri
 from .model import GraphBuilder
 from .phase3_common import (
     TreeFile,
@@ -49,15 +50,15 @@ def analyze_repository(
     add_skipped_diagnostics(builder, skipped)
 
     scopes: dict[int, str] = {}
-    symbols: dict[str, str] = {}
     external_cache: dict[str, str] = {}
     modules_by_path = {item.relative_path: item.module_id for item in files}
     for tree_file in files:
-        _collect_definitions(tree_file, builder, scopes, symbols)
+        _collect_definitions(tree_file, builder, scopes)
+    bindings = DartBindings(files, builder.nodes, scopes)
     for tree_file in files:
         _collect_imports(tree_file, builder, modules_by_path, external_cache)
-        _collect_type_references(tree_file, builder, scopes, symbols, external_cache)
-        _collect_calls(tree_file, builder, scopes, symbols, external_cache)
+        _collect_type_references(tree_file, builder, scopes, bindings, external_cache)
+        _collect_calls(tree_file, builder, scopes, bindings, external_cache)
         if tree_file.tree.root_node.has_error:
             diagnostic(
                 builder,
@@ -87,7 +88,6 @@ def _collect_definitions(
     tree_file: TreeFile,
     builder: GraphBuilder,
     scopes: dict[int, str],
-    symbols: dict[str, str],
 ) -> None:
     definition_types = {
         "class_definition": ("class", {"identifier"}),
@@ -97,25 +97,53 @@ def _collect_definitions(
         "extension_type_declaration": ("type", {"identifier"}),
         "function_signature": ("function", {"identifier"}),
         "constructor_signature": ("method", {"identifier", "type_identifier"}),
+        "getter_signature": ("function", {"identifier"}),
+        "setter_signature": ("function", {"identifier"}),
     }
     for node, ancestors in walk_with_ancestors(tree_file.tree.root_node):
         spec = definition_types.get(node.type)
         if spec is None:
             continue
         kind, name_types = spec
-        name_node = next((candidate for candidate, _ in walk_with_ancestors(node) if candidate.type in name_types), None)
+        if any(parent.type == "formal_parameter" for parent in ancestors):
+            continue
+        name_node = next((candidate for candidate in node.named_children if candidate.type in name_types), None)
         if name_node is None:
             continue
         name = node_text(name_node, tree_file.source).strip()
         if not name or name in {"void", "dynamic"}:
             continue
-        is_member = any(parent.type in {"class_definition", "mixin_declaration", "enum_declaration", "extension_declaration", "extension_type_declaration", "class_body"} for parent in ancestors)
-        if node.type == "function_signature" and any(parent.type == "method_signature" for parent in ancestors):
-            kind = "method"
         parent_id = nearest_scope(ancestors, scopes, tree_file.module_id)
-        qualified = f"{tree_file.relative_path}:{name}"
+        is_member = builder.nodes[parent_id]["kind"] in {"class", "type"}
+        if kind == "function" and is_member:
+            kind = "method"
+        constructor = node.type == "constructor_signature"
+        names = [node_text(c, tree_file.source) for c in node.named_children if c.type == "identifier"]
+        member_name = names[-1] if constructor else name
+        if constructor:
+            name = ".".join(names)
+        parent_name = builder.nodes[parent_id]["qualified_name"]
+        qualified = f"{tree_file.relative_path}:{name}" if parent_id == tree_file.module_id else f"{parent_name}.{name}"
         node_id = unique_id(builder.nodes, f"dart:{qualified}:{kind}", node.start_byte)
-        signature = node_text(node, tree_file.source).strip()
+        wrapper = node
+        if node.parent and node.parent.type in {"method_signature", "declaration"}:
+            wrapper = node.parent
+        body = wrapper.next_named_sibling
+        while body is not None and body.type == "comment":
+            body = body.next_named_sibling
+        if body is None or body.type != "function_body":
+            body = next((c for c in wrapper.named_children if c.type == "function_body"), None)
+        if kind not in {"function", "method"}:
+            body = None
+        span = span_for_tree(wrapper)
+        if body:
+            span.update({key: value for key, value in span_for_tree(body).items() if key.startswith("end_")})
+        signature = node_text(wrapper, tree_file.source).strip()
+        if kind in {"class", "type"}:
+            class_body = next((c for c in node.named_children if c.type in {"class_body", "enum_body"}), None)
+            if class_body:
+                signature = tree_file.source[node.start_byte:class_body.start_byte].decode("utf-8", "replace").strip()
+        is_async = bool(body and re.match(r"\s*async\b", node_text(body, tree_file.source)))
         builder.add_node(
             {
                 "id": node_id,
@@ -123,30 +151,37 @@ def _collect_definitions(
                 "qualified_name": qualified,
                 "display_name": name,
                 "file": tree_file.relative_path,
-                "span": span_for_tree(node),
+                "span": span,
                 "parent_id": parent_id,
                 "visibility": "private" if name.startswith("_") else "public",
                 "signature": signature,
                 "return_behavior": "unknown" if kind in {"function", "method"} else None,
-                "execution_kind": "async" if "async" in signature else "sync" if kind in {"function", "method"} else "unknown",
+                "execution_kind": "async" if is_async else "sync" if kind in {"function", "method"} else "unknown",
                 "extensions": {
                     "language": "dart",
                     "grammar": "dart",
                     "declaration_kind": node.type,
                     "member": is_member,
+                    "member_name": member_name,
+                    "static": any(c.type == "static" for c in wrapper.children),
+                    "constructor": constructor,
+                    "accessor": node.type in {"getter_signature", "setter_signature"},
+                    "has_inheritance": any(c.type in {"superclass", "interfaces", "mixins"} for c in node.named_children),
                 },
             }
         )
         builder.nodes[node_id].pop("return_behavior", None) if kind not in {"function", "method"} else None
         builder.nodes[node_id].pop("execution_kind", None) if kind not in {"function", "method"} else None
         scopes[node.id] = node_id
-        symbols.setdefault(name.casefold(), node_id)
+        scopes[wrapper.id] = node_id
+        if body:
+            scopes[body.id] = node_id
         add_relation(
             builder,
             source_id=parent_id,
             target_id=node_id,
             relation_type="contains",
-            source_span=span_for_tree(node),
+            source_span=span,
             detail={"kind": "lexical_definition", "declaration_kind": node.type},
             edge_prefix="dart",
         )
@@ -176,10 +211,12 @@ def _collect_imports(
                 span=span_for_tree(node),
             )
             continue
-        is_local = reference.startswith(".")
-        candidate_path = (Path(tree_file.relative_path).parent / reference).as_posix() if is_local else reference
+        candidate_path = local_uri(tree_file.relative_path, reference)
         target_id = modules_by_path.get(candidate_path)
-        status = "resolved" if target_id else "external"
+        conditional = len(values) > 1
+        if conditional:
+            target_id = None
+        status = "resolved" if target_id else "unresolved" if conditional else "external"
         if target_id is None:
             target_id = external_node(
                 builder,
@@ -207,7 +244,7 @@ def _collect_type_references(
     tree_file: TreeFile,
     builder: GraphBuilder,
     scopes: dict[int, str],
-    symbols: dict[str, str],
+    bindings: DartBindings,
     external_cache: dict[str, str],
 ) -> None:
     for node, ancestors in walk_with_ancestors(tree_file.tree.root_node):
@@ -217,13 +254,18 @@ def _collect_type_references(
         if not name:
             continue
         source_id = nearest_scope(ancestors, scopes, tree_file.module_id)
-        target_id = symbols.get(name.casefold())
+        if node.next_sibling and node.next_sibling.type == ".":
+            continue
+        parts = [name]
+        if node.prev_sibling and node.prev_sibling.type == "." and node.prev_named_sibling:
+            parts.insert(0, node_text(node.prev_named_sibling, tree_file.source))
+        target_id, evidence = bindings.resolve(tree_file, node, parts, types_only=True)
         status = "resolved" if target_id else "external"
         if target_id is None:
             target_id = external_node(
                 builder,
                 external_cache,
-                node_id=f"dart:type:{name.casefold()}",
+                node_id=f"dart:type:{'.'.join(parts)}",
                 qualified_name=f"Dart type {name}",
                 display_name=name,
                 language="dart",
@@ -236,7 +278,7 @@ def _collect_type_references(
             target_id=target_id,
             relation_type="references",
             source_span=span_for_tree(node),
-            detail={"reference": name, "kind": "type"},
+            detail={"reference": ".".join(parts), "kind": "type", **evidence},
             resolution_status=status,
             confidence=0.95 if status == "resolved" else 0.5,
             edge_prefix="dart",
@@ -247,27 +289,23 @@ def _collect_calls(
     tree_file: TreeFile,
     builder: GraphBuilder,
     scopes: dict[int, str],
-    symbols: dict[str, str],
+    bindings: DartBindings,
     external_cache: dict[str, str],
 ) -> None:
     for node, ancestors in walk_with_ancestors(tree_file.tree.root_node):
         if node.type != "argument_part":
             continue
-        before = tree_file.source[: node.start_byte].decode("utf-8", "replace")
-        match = re.search(r"([A-Za-z_$][A-Za-z0-9_$]*)\s*$", before)
-        if not match:
-            continue
-        name = match.group(1)
+        parts, expression = call_parts(node, tree_file.source)
         source_id = nearest_scope(ancestors, scopes, tree_file.module_id)
-        target_id = symbols.get(name.casefold())
+        target_id, evidence = bindings.resolve(tree_file, node, parts)
         status = "resolved" if target_id else "unresolved"
         if target_id is None:
             target_id = external_node(
                 builder,
                 external_cache,
-                node_id=f"dart:call:{name.casefold()}",
-                qualified_name=f"Dart call {name}",
-                display_name=name,
+                node_id=f"dart:call:{tree_file.relative_path}:{node.start_byte}",
+                qualified_name=f"Dart call {expression}",
+                display_name=expression,
                 language="dart",
                 extensions={"dart_object_type": "call"},
             )
@@ -277,7 +315,7 @@ def _collect_calls(
             target_id=target_id,
             relation_type="calls",
             source_span=span_for_tree(node),
-            detail={"expression": f"{name}(...)", "call_kind": "direct"},
+            detail={"expression": expression, "call_kind": "direct" if parts and len(parts) == 1 else "member", **evidence},
             resolution_status=status,
             confidence=0.85 if status == "resolved" else 0.45,
             edge_prefix="dart",

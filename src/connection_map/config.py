@@ -29,6 +29,10 @@ DEFAULT_EXCLUDE = [
     "**/node_modules/**",
     "**/.next/**",
     "**/.cache/**",
+    "**/.uv-cache/**",
+    "**/.uv-cache-local/**",
+    "**/.dart_tool/**",
+    "**/flutter/ephemeral/**",
     "**/*.g.cs",
     "**/*.designer.cs",
     "**/*.gen.go",
@@ -268,6 +272,9 @@ class AnalysisConfig:
     # kept separate from repository execution: no compiler, build tool, JVM,
     # Go command, or Cargo command is started by the analyzer.
     context: dict[str, Any] = field(default_factory=dict)
+    # A mixed analyzer keeps the parent's language ownership while each child
+    # uses its own grammar. This is transient dispatch state, not user settings.
+    _discovery_languages: tuple[str, ...] = field(default=(), init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if self.include is None:
@@ -359,6 +366,7 @@ class AnalysisConfig:
         if not isinstance(self.context, dict):
             raise ValueError("context must be a TOML table")
         allowed_context = {
+            "tsconfig",
             "compile_commands",
             "classpath",
             "source_roots",
@@ -377,7 +385,7 @@ class AnalysisConfig:
             value = self.context.get(name, [])
             if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
                 raise ValueError(f"context.{name} must be a list of non-empty strings")
-        for name in ("compile_commands", "go_os", "go_arch", "rust_target"):
+        for name in ("compile_commands", "go_os", "go_arch", "rust_target", "tsconfig"):
             value = self.context.get(name)
             if value is not None and (not isinstance(value, str) or not value):
                 raise ValueError(f"context.{name} must be a non-empty string or null")
@@ -385,7 +393,9 @@ class AnalysisConfig:
             raise ValueError("context.rust_all_cfg must be boolean")
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        values = asdict(self)
+        values.pop("_discovery_languages")
+        return values
 
     def to_toml(self) -> str:
         """Serialize the effective configuration for central-mode replay."""
@@ -494,7 +504,11 @@ def discover_source_files(
     selected: list[Path] = []
     skipped: list[tuple[str, str]] = []
     visited_directories: set[Path] = set()
-    for current, dirs, files in os.walk(root, followlinks=config.follow_symlinks):
+    def discovery_error(error: OSError) -> None:
+        path = Path(error.filename) if error.filename else root
+        skipped.append((path.relative_to(root).as_posix(), "directory_unreadable"))
+
+    for current, dirs, files in os.walk(root, followlinks=config.follow_symlinks, onerror=discovery_error):
         current_path = Path(current)
         resolved_current = current_path.resolve()
         if resolved_current in visited_directories:
@@ -534,7 +548,7 @@ def discover_source_files(
                 if not _path_is_within(root, resolved_candidate):
                     skipped.append((candidate.relative_to(root).as_posix(), "symlink_outside_root"))
                     continue
-            source_language = language_for_path(candidate, selected_languages)
+            source_language = language_for_path(candidate, config._discovery_languages or selected_languages)
             if source_language not in selected_languages:
                 continue
             relative = candidate.relative_to(root).as_posix()

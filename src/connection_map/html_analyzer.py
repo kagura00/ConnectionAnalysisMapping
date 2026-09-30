@@ -73,6 +73,9 @@ def collect(context: WebAnalysisContext, web_file: WebFile) -> None:
         _collect_asset_reference(context, web_file, node, tag, attributes)
 
         if tag == "script" and "src" not in attributes and _has_inline_content(node, web_file.source):
+            context.extraction_limitations.append(
+                f"{web_file.relative_path}:{node.start_point[0] + 1}: inline script内のJavaScriptは未解析です。"
+            )
             context.diagnostic(
                 "unsupported_construct",
                 "info",
@@ -83,6 +86,9 @@ def collect(context: WebAnalysisContext, web_file: WebFile) -> None:
                 details={"construct": "inline_script"},
             )
         if tag == "style" and _has_inline_content(node, web_file.source):
+            context.extraction_limitations.append(
+                f"{web_file.relative_path}:{node.start_point[0] + 1}: inline style内のCSSは未解析です。"
+            )
             context.diagnostic(
                 "unsupported_construct",
                 "info",
