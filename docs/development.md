@@ -56,4 +56,4 @@ uv run python scripts/verify_distribution.py --dist dist
 
 解析JSONの整合性だけでなく、`freshness`、`coverage`、`truncation`と各接続の宣言根拠を確認します。構文回復診断、動的処理、マクロ、外部依存、テンプレート実体化などの制約は[人とAIの接続探索](ai-context.md)に記載しています。
 
-対応する範囲では、呼び出し元・先を実ソースと照合してください。画面と`context`のAI用JSONが同じ範囲・同じ根拠を返すことも確認します。保存済みグラフはコード変更後に再解析してください。
+対応する範囲では、呼び出し元・先を実ソースと照合してください。`investigate`では既定予算に対象・呼び出し元の本文・関連テストが入り、キャッシュを使う場合もソースが一致することを確認します。`tests/test_investigation.py`は誤った型推定、サイズ省略、古いソース、設定・コード更新、Git差分と外部コマンドの抑止、CLI/HTTPを検証します。画面のAI保存は`investigate` APIのJSONを再整形せず保存し、`tests/viewer.test.cjs`で確認します。保存済みグラフはコード変更後に再解析してください。

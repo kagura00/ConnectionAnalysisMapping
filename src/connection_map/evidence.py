@@ -25,6 +25,14 @@ def capture_sources(root: Path, config: AnalysisConfig) -> dict[str, Any]:
             continue
         inventory[relative] = hashlib.sha256(content).hexdigest()
     context_files, context_errors, unsupported_styles = {}, [], []
+    if "python" in config.active_languages():
+        from .python_context import PythonProjects
+        for path in sorted(PythonProjects(root, config).inputs):
+            relative = path.relative_to(root).as_posix()
+            try:
+                context_files[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+            except OSError:
+                context_errors.append(relative)
     if set(config.active_languages()) & {"html", "css", "javascript", "typescript"}:
         from .typescript_context import TypeScriptProjects
         projects = TypeScriptProjects(root, config)

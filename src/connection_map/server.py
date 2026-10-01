@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from .bundle import BundleError, quick_validate_bundle, validate_bundle
 from .contract import ContractError, canonical_sha256, validate_document
 from .evidence import check_freshness, coverage_summary
+from .investigation import build_investigation, encode_packet, select_targets
 from .layout import LayoutError, load_layout
 from .query import GraphQuery
 from .workspace import RepositoryRecord, Workspace, WorkspaceError
@@ -44,7 +45,7 @@ class QueryRequestMixin:
 
     def _serve_query(
         self, path: Path, digest: str | None, root: Path | None, *,
-        quality: bool = False, diagnostics: bool = False,
+        quality: bool = False, diagnostics: bool = False, investigation: bool = False,
     ) -> None:
         if not digest:
             self.send_error(404, "analysis JSON is unavailable")
@@ -63,6 +64,8 @@ class QueryRequestMixin:
                 allowed = {"severity", "file", "offset", "limit"} if diagnostics else {
                     "node", "direction", "relation", "resolution", "depth", "max_nodes", "max_edges",
                 }
+                if investigation:
+                    allowed |= {"symbol", "file", "line", "max_chars", "max_targets", "snippets", "snippet_lines"}
                 if set(params) - allowed:
                     raise ValueError("unknown query parameter")
                 if any(len(values) != 1 for name, values in params.items() if name != "relation"):
@@ -72,6 +75,20 @@ class QueryRequestMixin:
                         severity=params.get("severity", ["all"])[0], file=params.get("file", [""])[0],
                         offset=int(params.get("offset", ["0"])[0]), limit=int(params.get("limit", ["200"])[0]),
                     )
+                elif investigation:
+                    snippet_option = params.get("snippets", ["true"])[0]
+                    if snippet_option not in {"true", "false"}:
+                        raise ValueError("snippets must be true or false")
+                    targets = select_targets(query, node=params.get("node", [None])[0],
+                        symbol=params.get("symbol", [None])[0], file=params.get("file", [None])[0],
+                        line=int(params["line"][0]) if "line" in params else None)
+                    payload = build_investigation(query, targets, root=root,
+                        direction=params.get("direction", ["both"])[0], relations=params.get("relation"),
+                        resolution=params.get("resolution", ["all"])[0], depth=int(params.get("depth", ["1"])[0]),
+                        max_nodes=int(params.get("max_nodes", ["60"])[0]), max_edges=int(params.get("max_edges", ["120"])[0]),
+                        max_chars=int(params.get("max_chars", ["12000"])[0]), snippets=snippet_option == "true",
+                        max_targets=int(params.get("max_targets", ["8"])[0]),
+                        snippet_lines=int(params.get("snippet_lines", ["24"])[0]))
                 else:
                     payload = query.neighborhood(
                         params.get("node", [""])[0], direction=params.get("direction", ["both"])[0],
@@ -82,10 +99,11 @@ class QueryRequestMixin:
         except (ValueError, TypeError) as exc:
             self.send_error(400, str(exc))
             return
-        self._serve_json(payload)
+        self._serve_json(payload, compact=investigation)
 
-    def _serve_json(self, payload: Any) -> None:
-        content = (json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+    def _serve_json(self, payload: Any, *, compact: bool = False) -> None:
+        text = encode_packet(payload) if compact else json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n"
+        content = text.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(content)))
@@ -108,9 +126,10 @@ class AnalysisRequestHandler(QueryRequestMixin, SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         request_path = self.path.split("?", 1)[0]
-        if request_path in {"/context", "/quality", "/diagnostics"}:
+        if request_path in {"/context", "/quality", "/diagnostics", "/investigate"}:
             self._serve_query(self.analysis_path, self.analysis_sha256, self.source_root,
-                              quality=request_path == "/quality", diagnostics=request_path == "/diagnostics")
+                              quality=request_path == "/quality", diagnostics=request_path == "/diagnostics",
+                              investigation=request_path == "/investigate")
             return
         if request_path == "/analysis.json":
             self._serve_analysis()
@@ -248,7 +267,7 @@ class WorkspaceRequestHandler(QueryRequestMixin, SimpleHTTPRequestHandler):
             return
         with self.validation_lock:
             validation = self.validation_states.get(repository_id, {"status": record.validation_status})
-        if resource in {"context", "quality", "diagnostics"} and len(parts) == 4:
+        if resource in {"context", "quality", "diagnostics", "investigate"} and len(parts) == 4:
             if validation.get("status") == "invalid":
                 self.send_error(409, "repository validation failed")
                 return
@@ -256,6 +275,7 @@ class WorkspaceRequestHandler(QueryRequestMixin, SimpleHTTPRequestHandler):
                 self.workspace.path_for(record, record.analysis_path),
                 self.artifact_hashes.get(repository_id, {}).get("analysis.json"),
                 Path(record.absolute_path), quality=resource == "quality", diagnostics=resource == "diagnostics",
+                investigation=resource == "investigate",
             )
             return
         if resource in {"manifest", "analysis.json", "layout.json"} and validation.get("status") == "invalid":
@@ -342,15 +362,6 @@ class WorkspaceRequestHandler(QueryRequestMixin, SimpleHTTPRequestHandler):
                 return
         self.send_response(200)
         self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(content)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(content)
-
-    def _serve_json(self, payload: Any) -> None:
-        content = (json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(content)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()

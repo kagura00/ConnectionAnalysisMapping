@@ -2372,12 +2372,15 @@
     save.addEventListener("click", async () => {
       const params = new URLSearchParams({ node: result.focus_id, direction: result.query.direction,
         depth: String(result.query.depth), resolution: result.query.resolution,
-        max_nodes: String(result.query.max_nodes), max_edges: String(result.query.max_edges) });
+        max_nodes: String(result.query.max_nodes), max_edges: String(result.query.max_edges),
+        max_chars: "12000", snippets: "true" });
       (result.query.relations || []).forEach((relation) => params.append("relation", relation));
       try {
-        const response = await fetch(`${dataUrl("context")}?${params}`, { cache: "no-store" });
+        const response = await fetch(`${dataUrl("investigate")}?${params}`, { cache: "no-store" });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        downloadJson(await response.json(), "connection-context.json");
+        const text = await response.text();
+        if (JSON.parse(text).format !== "connection-analysis-investigation") throw new Error("調査JSONの形式が不正です");
+        downloadJsonText(text, "connection-investigation.json");
       } catch (error) { setStatus(`JSONの保存に失敗しました: ${error.message}`, true); }
     });
     detailsElement.append(save);
@@ -2425,7 +2428,11 @@
   }
 
   function downloadJson(value, name) {
-    const url = URL.createObjectURL(new Blob([`${JSON.stringify(value, null, 2)}\n`], { type: "application/json" }));
+    downloadJsonText(`${JSON.stringify(value, null, 2)}\n`, name);
+  }
+
+  function downloadJsonText(text, name) {
+    const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
     const link = document.createElement("a");
     link.href = url;
     link.download = name;

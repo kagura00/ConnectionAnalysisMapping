@@ -113,6 +113,35 @@ def build_parser() -> argparse.ArgumentParser:
     context.add_argument("--max-edges", type=int, default=120)
     context.add_argument("--root", type=Path, help="compare the snapshot with current selected source files")
     context.add_argument("--output", type=Path, help="optional context JSON path")
+    context.add_argument("--compact", action="store_true", help="emit a bounded investigation packet")
+    context.add_argument("--snippets", action="store_true", help="include verified source excerpts (requires compact)")
+    context.add_argument("--max-chars", type=int, default=12000, help="serialized compact JSON character budget")
+
+    investigate = commands.add_parser("investigate", help="investigate a symbol/location/Git diff with fresh analysis")
+    investigate.add_argument("--root", type=Path, default=Path("."))
+    investigate.add_argument("--config", type=Path, help="analysis TOML; otherwise use local config or detect languages")
+    investigate.add_argument("--language", help="language/preset override when no config is supplied")
+    investigate.add_argument("--node", help="exact node ID")
+    investigate.add_argument("--symbol", help="exact qualified or unambiguous display name")
+    investigate.add_argument("--file", help="repository-relative source path")
+    investigate.add_argument("--line", type=int, help="source line within file")
+    investigate.add_argument("--changed", action="store_true", help="select declarations changed relative to base")
+    investigate.add_argument("--base", default="HEAD", help="Git commit/ref for changed (default: HEAD)")
+    investigate.add_argument("--cache-dir", type=Path, help="cache outside target; default: OS temporary directory")
+    investigate.add_argument("--refresh", action="store_true", help="rebuild instead of reusing verified cache")
+    investigate.add_argument("--include-tests", dest="include_tests", action="store_true", default=None)
+    investigate.add_argument("--exclude-tests", dest="include_tests", action="store_false")
+    investigate.add_argument("--direction", choices=["in", "out", "both"], default="both")
+    investigate.add_argument("--relation", action="append")
+    investigate.add_argument("--resolution", choices=["all", "resolved", "external", "unresolved", "unsupported"], default="all")
+    investigate.add_argument("--depth", type=int, default=1)
+    investigate.add_argument("--max-nodes", type=int, default=60)
+    investigate.add_argument("--max-edges", type=int, default=120)
+    investigate.add_argument("--max-chars", type=int, default=12000, help="JSON characters including final newline")
+    investigate.add_argument("--max-targets", type=int, default=8, help="focus declarations in a batch (1..20)")
+    investigate.add_argument("--snippet-lines", type=int, default=24)
+    investigate.add_argument("--no-snippets", action="store_true")
+    investigate.add_argument("--output", type=Path)
 
     report = commands.add_parser("report", help="summarize graph quality and resolution coverage")
     report.add_argument("--input", type=Path, required=True, help="analysis JSON path")
@@ -177,6 +206,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _run_search(args)
         if args.command == "context":
             return _run_context(args)
+        if args.command == "investigate":
+            from .investigate_cli import run_investigate
+            return run_investigate(args)
         if args.command == "report":
             return _run_report(args)
         if args.command == "init":
@@ -399,6 +431,21 @@ def _run_report(args: argparse.Namespace) -> int:
 
 
 def _run_context(args: argparse.Namespace) -> int:
+    if args.compact:
+        from .investigation import build_investigation, encode_packet, write_packet_stdout
+        result = build_investigation(GraphQuery(_load_analysis(args.input)), [args.node], root=args.root,
+            direction=args.direction, relations=args.relation, resolution=args.resolution, depth=args.depth,
+            max_nodes=args.max_nodes, max_edges=args.max_edges, max_chars=args.max_chars, snippets=args.snippets)
+        payload = encode_packet(result)
+        if args.output is None:
+            write_packet_stdout(payload)
+        else:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(payload, encoding="utf-8", newline="\n")
+            print(f"wrote investigation {args.output} ({len(payload)} characters)")
+        return 0
+    if args.snippets:
+        raise ValueError("snippets requires compact; use investigate for automatic fresh analysis")
     result = GraphQuery(_load_analysis(args.input)).neighborhood(
         args.node, direction=args.direction, relations=args.relation, resolution=args.resolution,
         depth=args.depth, max_nodes=args.max_nodes, max_edges=args.max_edges, root=args.root,
