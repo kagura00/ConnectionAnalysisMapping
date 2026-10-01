@@ -126,7 +126,7 @@ Python解析は追加依存なしで動作する。HTML、CSS、JavaScript、Typ
 
 `extra`は、uvで追加依存をまとめて導入するための名前であり、解析言語を指定する設定ではない。ソースアーカイブのPython環境では`uv sync --extra ...`で導入する。local modeで対象リポジトリ自身のPython環境を使う場合は、対象環境へ同じ依存を導入するか、生成された`analyzer/README.md`の`uv run --with ...`例を使う。
 
-Java/C#/Kotlinの`classpath`・`source_roots`、C/C++の`compile_commands`、参照先の`references`は指定先を読み取る。対象リポジトリ外のパスも指定できるため、信頼できるファイルだけを設定する。解析器は参照先のコードを実行しない。
+Pythonの`python_source_roots`はリポジトリ相対パスに限る。Java/C#/Kotlinの`classpath`・`source_roots`、C/C++の`compile_commands`、参照先の`references`は指定先を読み取る。対象リポジトリ外のパスも指定できるため、信頼できるファイルだけを設定する。解析器は参照先のコードを実行しない。
 
 | 対象 | extra |
 | --- | --- |

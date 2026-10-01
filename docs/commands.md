@@ -183,6 +183,37 @@ uv run connection-map report --input C:\path\to\repository\.connection-map\snaps
 
 `report --root PATH`を指定すると、成果物の件数・解析範囲に加えて、現在の選択ソースとの追加・変更・削除を比較する。ルートを省略した場合は現在のソースを確認しない。
 
+### `investigate`
+
+現在のソースを解析・照合してから、対象と周辺の接続、ソース抜粋、関連テスト、未解決呼び出しの候補を小さなJSONで返す。解析JSONやノードIDの事前準備は不要。
+
+```powershell
+uv run connection-map investigate --root C:\path\to\repository --symbol Service.handle
+uv run connection-map investigate --root C:\path\to\repository --file src/service.py --line 42
+uv run connection-map investigate --root C:\path\to\repository --changed --base HEAD `
+  --output C:\analysis\investigation.json
+```
+
+| オプション | 内容 |
+| --- | --- |
+| `--symbol NAME` | 完全修飾名、または一意な表示名。曖昧な場合はエラー |
+| `--file PATH --line N` | リポジトリ相対パスと正の行番号。最小の包含宣言を選ぶ。行省略時はファイル内のcallableを対象とする |
+| `--node ID` | 既知のノードID。他の選択方法と併用不可 |
+| `--changed --base REF` | Gitルートで、commit/ref（既定HEAD）と現在のファイルを比較。staged・unstaged・untrackedを含む。他の選択方法と併用不可 |
+| `--config PATH` | 明示的TOML。省略時は対象の`.connection-map/config.toml`、それもなければ拡張子から言語を選択 |
+| `--language KEY` | 言語・プリセットを明示。対象のローカル設定を使わない。明示的`--config`と併用不可 |
+| `--include-tests / --exclude-tests` | テストの包含を上書き。設定がなければ既定で含む。設定がある場合はその値を尊重 |
+| `--cache-dir PATH` | 対象リポジトリ外のキャッシュ。既定はOS一時領域の`connection-map-investigations` |
+| `--refresh` | キャッシュの照合結果にかかわらず再解析 |
+| `--max-chars N` | 最後の改行を含むJSON文字数。2,048〜200,000、既定12,000。バイト数・トークン数ではない |
+| `--max-targets N` | 複数宣言の対象数1〜20、既定8。省略数を返す |
+| `--snippet-lines N / --no-snippets` | 宣言当たりの抜粋行数1〜80（既定24）、または抜粋を省略 |
+| `--output PATH` | 保存先。省略時は標準出力へJSONのみ |
+
+`--direction`、`--relation`、`--resolution`、`--depth`、`--max-nodes`、`--max-edges`も`context`と同じ範囲で使える。複数宣言は既定8件まで対象にし、省略数を返す。Git差分では各巡回で本番ファイルを先にし、ファイルごとに1宣言ずつ選ぶ。変更が内部のメソッドだけに収まる場合は、包含するクラスを重ねて選ばない。対象と品質情報だけでも指定文字数を超える場合はエラーとなる。
+
+既定出力は問い合わせ結果全体のグラフではない。`counts`と`truncation`で省略を確認し、必要に応じて対象・方向を絞るか予算を増やす。削除だけの変更や未対応ファイルは現在の宣言へ対応づけられない。対象0件なら理由付きのエラーとなり、一部を対応づけられた場合も削除・未対応部分は`changes`と`selection`に残す。削除前の依存関係を復元する機能はない。
+
 ### `context`
 
 `search`で得たノードIDの周辺を、根拠・未解決情報・解析範囲・鮮度付きJSONとして返す。画面も同じ問い合わせを使う。
@@ -195,6 +226,14 @@ uv run connection-map context --input C:\analysis\analysis.json `
 ```
 
 例のパス・ノードIDは対象に合わせて変更し、IDは`search`の結果から取得する。`--relation`は繰り返し指定できる。省略時は包含を除く。`--resolution`の既定は`all`、ほかに`resolved`・`external`・`unresolved`・`unsupported`を指定できる。深さは0〜5、ノード上限は1〜500、接続上限は1〜1000。上限や指定深さによる省略は`truncation`に記録する。詳細は[人とAIの接続探索](ai-context.md)を参照。
+
+既存解析を小さな調査JSONへ変換する場合は`--compact --max-chars 12000`を追加する。`--snippets`も付ける場合は`--root`を渡す。古い・未照合の解析に現在のソース本文は付けない。自動的な再解析には`investigate`を使う。従来の`context`出力形式は維持する。
+
+### 調査HTTP API
+
+直接モードは`/investigate`、central modeは`/api/repositories/{id}/investigate`。例: `/investigate?symbol=Service.handle&max_chars=12000`。`node`または`symbol`または`file`・`line`で選択する。方向・関係・解決状態・件数・深さに加え、`max_chars`、`max_targets`、`snippet_lines`、`snippets=true/false`を指定できる。
+
+HTTPは既存解析を使い、対象ルートは起動設定・登録先から決める。再解析やGit差分の取得は行わない。古い解析は`freshness.status=stale`として返し、ソース抜粋を付けない。未知・重複・範囲外の引数は400で拒否する。
 
 ### 診断HTTP API
 

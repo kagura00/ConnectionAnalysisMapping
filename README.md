@@ -32,7 +32,8 @@ portable版は複数のリポジトリを一つのデータ領域で管理でき
 - 呼び出し、読み込み、継承、SQL読み書きなどの関係の探索
 - 検索結果から対象へ移動
 - 選んだ関数の接続元・先、根拠、解析範囲とソースの鮮度を確認
-- 同じ周辺情報を`context`コマンドまたは画面からAI用JSONとして取得
+- `investigate`でシンボル・ファイルと行・Git差分から調査し、ソース抜粋・関連テスト・未解決候補を含むAI用JSONを取得
+- 画面の「AI用JSONを保存」でも、既定12,000文字以内の調査JSONを取得
 - ズーム、パン、詳細表示、接続先への移動
 - 対応言語の解析（詳細は[対応言語一覧](docs/languages.md)を参照してください）
 - 複数言語を一度に解析し、画面上で表示言語を切り替える操作
@@ -42,6 +43,16 @@ portable版は複数のリポジトリを一つのデータ領域で管理でき
 Python解析はportable版に同梱されたPythonで実行できます。Tree-sitterやSQLパーサーを使う言語は、Python環境への追加依存が必要です。
 
 portable版で追加依存が必要な言語を解析する場合は、[インストール手順](docs/installation.md)を確認してください。
+
+AIによる調査は、解析JSONやノードIDを事前に用意せず始められます。ソース環境での例:
+
+```powershell
+uv run connection-map investigate --root C:\path\to\repository --symbol Service.handle
+uv run connection-map investigate --root C:\path\to\repository --file src/service.py --line 42
+uv run connection-map investigate --root C:\path\to\repository --changed --base HEAD
+```
+
+初回は解析し、次回からは現在のソースと設定を照合したキャッシュを使います。対象コードは実行せず、既定のキャッシュは対象リポジトリ外に保存します。名前が曖昧な場合はファイルと行を指定してください。詳細は[AI向けの使い方](docs/ai-context.md)を参照してください。
 
 ## ドキュメント
 

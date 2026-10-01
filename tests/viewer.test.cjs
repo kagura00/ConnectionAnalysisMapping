@@ -75,3 +75,53 @@ test("focus layout separates callers and callees without changing saved graph co
   assert.ok(points.get("c").x > points.get("b").x);
   assert.deepEqual(result.nodes[0], { id: "a" });
 });
+
+test("AI export downloads the exact bounded source packet from the shared investigation API", async () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/connection_map/web/app.js"), "utf8").replace(/\r\n/g, "\n");
+  function extract(name) {
+    const start = source.indexOf(`  function ${name}(`);
+    assert.ok(start >= 0, name);
+    return source.slice(start, source.indexOf("\n  }", start) + 4);
+  }
+  // Re-encoding large numbers or non-BMP source text can change a character
+  // budget; the viewer must preserve the verified API response exactly.
+  const text = '{"format":"connection-analysis-investigation","source":"日本語😀","annotation":1e+20}\n';
+  const elements = [];
+  const blobs = [];
+  const clicks = [];
+  const errors = [];
+  const query = {direction: "in", depth: 2, resolution: "all", max_nodes: 60, max_edges: 120, relations: ["calls"]};
+  const scope = { URLSearchParams, state: { contextResult: { focus_id: "method", query, edges: [], truncation: {} } },
+    document: { createElement(tag) {
+      const element = { tag, addEventListener(event, handler) { this[event] = handler; },
+        click() { clicks.push({href: this.href, download: this.download}); } };
+      elements.push(element);
+      return element;
+    } },
+    detailsElement: { append() {} }, emptyList: (value) => value,
+    dataUrl: (endpoint) => `/api/repositories/repo/${endpoint}`,
+    setStatus: (message, failed) => { if (failed) errors.push(message); },
+    fetch: async (url) => {
+      const [endpoint, params] = url.split("?");
+      assert.equal(endpoint, "/api/repositories/repo/investigate");
+      const selected = new URLSearchParams(params);
+      assert.equal(selected.get("node"), "method");
+      assert.equal(selected.get("max_chars"), "12000");
+      assert.equal(selected.get("snippets"), "true");
+      assert.equal(selected.get("relation"), "calls");
+      assert.equal(selected.get("direction"), "in");
+      return {ok: true, text: async () => text};
+    },
+    Blob: class { constructor(parts) { blobs.push(parts.join("")); } },
+    URL: { createObjectURL: () => "blob:packet", revokeObjectURL() {} }, setTimeout: (callback) => callback(),
+  };
+  vm.createContext(scope);
+  vm.runInContext(["appendContextDetails", "downloadJson", "downloadJsonText"].map(extract).join("\n"), scope);
+  vm.runInContext('appendContextDetails({id:"method"})', scope);
+  await elements.find((element) => element.textContent === "AI用JSONを保存").click();
+  assert.deepEqual(errors, []);
+  assert.deepEqual(blobs, [text]);
+  assert.deepEqual(clicks, [{href: "blob:packet", download: "connection-investigation.json"}]);
+  vm.runInContext('downloadJson({nodes:{}}, "layout.json")', scope);
+  assert.match(blobs[1], /\n  "nodes"/);  // Human layout exports retain their readable formatting.
+});

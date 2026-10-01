@@ -370,6 +370,7 @@ class AnalysisConfig:
             "compile_commands",
             "classpath",
             "source_roots",
+            "python_source_roots",
             "references",
             "go_tags",
             "go_os",
@@ -381,7 +382,7 @@ class AnalysisConfig:
         unknown = sorted(set(self.context) - allowed_context)
         if unknown:
             raise ValueError(f"context contains unsupported keys: {', '.join(unknown)}")
-        for name in ("classpath", "source_roots", "references", "go_tags", "rust_features"):
+        for name in ("classpath", "source_roots", "python_source_roots", "references", "go_tags", "rust_features"):
             value = self.context.get(name, [])
             if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
                 raise ValueError(f"context.{name} must be a list of non-empty strings")

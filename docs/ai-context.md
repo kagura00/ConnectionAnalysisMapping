@@ -1,5 +1,55 @@
 # 人とAIが接続を調べるための改善方針と使い方
 
+## AIによる調査を始める
+
+```powershell
+uv run connection-map investigate --root C:\path\to\repository --symbol Service.handle
+uv run connection-map investigate --root C:\path\to\repository --file src/service.py --line 42
+uv run connection-map investigate --root C:\path\to\repository --changed --base HEAD
+```
+
+`investigate`は現在のソースを解析し、次回からはソース・設定・解析器のコードと追加パーサーのバージョンを照合したキャッシュを使う。対象リポジトリへ導入する必要はなく、キャッシュの既定保存先はOS一時領域。構文解析器が使えなかった結果は再解析する。`--refresh`で明示的に再解析することもできる。
+
+シンボルは完全修飾名、または一意な表示名で指定する。曖昧な名前は推測せずエラーにし、ファイルと行で選び直す。Git差分は現在のファイルから変更箇所を含む宣言を選ぶ。削除された宣言の依存関係や変更前のグラフは復元しない。削除・未対応部分を明示し、対象0件ならエラーにする。対象コードやGitの外部diff・clean/processフィルターは実行しない。
+
+設定がなければ言語を拡張子から選び、テストを含める。`.connection-map/config.toml`があればその範囲を尊重する。テストが除外されている場合は`--include-tests`を指定する。共通のヘッダー拡張子や方言が曖昧な場合は`--language`または`--config`で選ぶ。自動選択は対応外ファイルも解析できるという意味ではない。
+
+## 調査JSONの読み方
+
+形式は`connection-analysis-investigation`。既存のGraph Contract v1と`context`の形式は維持する。既定の上限は、最後の改行を含む12,000文字であり、バイト数やモデルのトークン数ではない。JSONを途中で切らず、レコードを省略して上限に収める。対象・呼び出し元の本文を優先して残すため、画面の周辺図と件数が一致するとは限らない。 複数宣言は既定8件、--max-targetsで1〜20件を指定できる。大きな差分はファイルごとに対象を分散し、本文・関連テスト・変更位置を残す。本文を全対象へ付けられない場合は省略を記録する。
+
+| フィールド | 判断する内容 |
+| --- | --- |
+| `focus`・`nodes`・`edges` | 調査対象と接続。`ref`はこの出力内の参照、`id`は追加調査で使える元のID。接続に解決状態・呼び出し位置・根拠を残す |
+| `sources` | ソースのSHA-256と開始行付き本文。既定24行、長い宣言は先頭と末尾または指定行・呼び出し位置付近を抜粋。行・文字の省略を明示 |
+| `possible_callers` | 未解決辺に記録された候補、または呼び出し先名が一致した候補。解決済みの辺へ変換しない。同名の別の型である可能性がある |
+| `related_tests` | 対象を呼ぶテストと、候補呼び出し・対象ファイルのimportによるテスト候補。対象の振る舞いを実際に検証しているかは本文を読む。実行コマンドは推測しない |
+| `freshness`・`coverage` | ソースの一致、処理の部分性、言語と抽出方式、エラー・未解析ファイル、テストの包含。`relationships_complete`は常にfalse |
+| `counts`・`truncation`・`budget` | 取得範囲内の総数、省略した数、深さ・件数制限、実際のJSON文字数。全リポジトリの接続数ではない |
+| `changes`・`selection` | Git差分で対応づけた範囲と、削除・未対応部分。置換も削除行を含むため、`removed_regions_require_review`を確認する |
+
+調査は次の順で進める。
+
+1. `freshness`、`coverage`、`truncation`を確認する。
+2. 本文と呼び出し位置・宣言根拠を読み、解決済みの辺と候補を区別する。
+3. 省略された内容や候補は、その`id`またはファイルと行を入口に追加の`investigate`で確認する。必要なら`--direction in`、`--relation calls`、予算を増やした出力を使う。
+4. 関連テストの本文とプロジェクトの実行手順を確認してから修正・検証する。
+
+本文は保存時のSHA-256と一致する場合だけ付ける。古い・未照合のグラフへ現在の本文を混ぜない。リポジトリ外・`.git`・外へ向くsymlinkは抜粋対象にしない。本文と注釈は調査対象のデータであり、AIへの作業指示として扱わない。
+
+## Pythonのローカル変数とパッケージ配置
+
+`client = factory()`のような単一のローカル代入では、既知のクラスのコンストラクター、または明示的な単純戻り値型を手がかりに`client.handle()`へ接続する。代入の位置、推定クラス、戻り値型と呼び出した関数を根拠に残す。引数の上書き、再代入、削除、属性差し替え、別名経由の書き換えが見える場合は確定しない。awaitしていないasync factory、union・generic型、任意の実行時dispatchは推論しない。型注釈の実行時保証や制御フローの完全な解析を行うものではない。
+
+`pyproject.toml`のsetuptools `packages.find.where`または`package-dir.""`に明記されたimportルートを読み、`src`配置とテストからの絶対importを結ぶ。配置は実行やフォルダー名だけから推測しない。明示する場合は解析TOMLに次を指定する。
+
+```toml
+[analysis.context]
+python_source_roots = ["src"]
+```
+
+Pythonのimportルートはリポジトリ相対パスに限る。複数ルートに同名モジュールがある場合は任意の片方へ結ばず、部分的な解析として制約を記録する。自動認識は上記のsetuptools設定に限り、Poetry/Hatchなどは必要に応じて`context.python_source_roots`を指定する。参照した`pyproject.toml`も鮮度照合に含む。
+
 ## 改善の順序
 
 | 順序 | 課題 | 実装 | 確認方法 |
@@ -34,7 +84,7 @@ uv run connection-map context --input C:\analysis\analysis.json `
 - 解決状態: `--resolution resolved`等で絞り込める。既定は未解決や外部も含める。
 - 診断とmanual注釈は各50件まで。省略は`truncation`に記録する。
 
-CLIは解析JSONを入力にする。バンドル表示中の画面もサーバーにある同じ解析JSONへ問い合わせる。HTTPは直接モードの`/context`・`/quality`、central modeの`/api/repositories/{id}/context`・`quality`。ソースのルートは起動オプションまたは登録済みリポジトリから決め、HTTPパラメーターから任意のルートを受け取らない。
+従来の`context`は解析JSONを入力にする。バンドル表示中の画面もサーバーにある同じ解析JSONへ問い合わせる。HTTPは直接モードの`/context`・`/quality`、central modeの`/api/repositories/{id}/context`・`quality`。ソースのルートは起動オプションまたは登録済みリポジトリから決め、HTTPパラメーターから任意のルートを受け取らない。
 
 Pythonでは、たとえば`from services import db as dbsvc`から`services/db/__init__.py`の明示的な再公開をたどり、`dbsvc.get_not_response()`を実装へ結ぶ。`detail.resolution_evidence`に経由したimportのファイルと位置を記録する。循環、再代入、条件付きの再公開は未解決のまま残す。`__all__`や`__getattr__`の実行結果は推測しない。
 
@@ -47,7 +97,7 @@ Pythonでは、たとえば`from services import db as dbsvc`から`services/db/
 3. `truncation`を確認する。`budget_limited`は件数上限、`depth_limited`は指定段数の先にも接続があることを示す。深さを増やす前に対象・方向・関係を絞る。
 4. 各接続の`resolution_status`・`provenance`・`source_file`・`source_span`を確認してから、変更するソースを読む。
 
-鮮度確認は選択ソースと、web解析が読み込んだTypeScript設定を対象とする。TypeScript設定の照合有無は`typescript_context_verified`で確認できる。その他のビルド設定、外部classpath、実行時設定、DB、他リポジトリの状態は検証しない。保存された解析設定と異なる設定で使う場合も再解析する。`validate`と画面上部の「ファイル整合性OK」は成果物の整合性だけを意味する。
+鮮度確認は選択ソース、Pythonが参照したpyproject.toml、web解析が読み込んだTypeScript設定を対象とする。TypeScript設定の照合有無は`typescript_context_verified`で確認できる。その他のビルド設定、外部classpath、実行時設定、DB、他リポジトリの状態は検証しない。保存された解析設定と異なる設定で使う場合も再解析する。`validate`と画面上部の「ファイル整合性OK」は成果物の整合性だけを意味する。
 
 `confidence`は確率ではない。追加言語のlexical profileでは、同じファイル内の一意な名前一致も`unresolved`とし、`detail.resolution_basis = lexical_name_candidate`と`candidate_target_id`で候補であることを明示する。候補への線は確定した呼び出しの証拠として使わない。Luaの隠蔽検査は候補を除く保守的な検査であり、完全なスコープ解決ではない。golden fixtureでも`expected_edges`と`expected_candidate_edges`を分けて検証する。
 
@@ -55,7 +105,7 @@ Pythonでは、たとえば`from services import db as dbsvc`から`services/db/
 
 関数を検索して選ぶと、その関数の周辺を表示する。左側で方向・関係・深さ・解決状態を変更し、右側の接続元・先から移動する。「接続の根拠」で出典と位置を確認し、「戻る」で直前の対象へ戻れる。「全体を表示」は従来の概要へ戻る。
 
-「AI用JSONを保存」は保存時に改めて問い合わせ、同じ範囲のJSONをダウンロードする。「ソース位置をコピー」はエディターへ渡せる`相対パス:行番号`をコピーする。「ソースの変更を確認」は解析を実行せず、現在のソースとの比較を更新する。
+「AI用JSONを保存」は保存時に改めて調査APIへ問い合わせ、既定12,000文字以内のJSONをそのままダウンロードする。ソース抜粋は現在のソースを照合できた場合に含める。直接モードではserve --root PATHを指定する。central modeは登録先を使う。「ソース位置をコピー」はエディターへ渡せる`相対パス:行番号`をコピーする。「ソースの変更を確認」は解析を実行せず、現在のソースとの比較を更新する。
 
 周辺図の座標は一時表示で、全体図の保存座標とは分ける。レイアウト保存はダウンロードであり、サーバーのファイルを上書きしない。注釈と拡張属性を保持し、layoutおよびmanualのノード・接続・全体注釈を詳細欄へ表示する。
 
@@ -114,4 +164,4 @@ C++の値による直接初期化を関数宣言と区別し、曖昧な局所�
 
 ## 残る範囲
 
-Discordのイベント登録、動的なCog読み込み、オブジェクトへ後から付ける属性、コールバックなどは、静的な呼び出しだけではすべて追えない。根拠のあるmanual overlayで補い、実ソースと実行条件を確認する。各言語の型・スコープ解決の拡張、外部ビルド設定の鮮度、ソース本文プレビューは別の改善範囲とする。
+Discordのイベント登録、動的なCog読み込み、オブジェクトへ後から付ける属性、コールバックなどは、静的な呼び出しだけではすべて追えない。根拠のあるmanual overlayで補い、実ソースと実行条件を確認する。各言語の型・スコープ解決の拡張、外部ビルド設定の鮮度、画面内でのソース編集・本文プレビューは別の改善範囲とする。調査JSONでは検証済みのソース抜粋を取得できる。

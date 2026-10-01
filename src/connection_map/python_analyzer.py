@@ -19,6 +19,7 @@ from typing import Any
 from .config import AnalysisConfig, discover_python_files, repository_id
 from .contract import validate_document
 from .model import GraphBuilder, span_for
+from .python_context import PythonProjects
 
 ANALYZER_NAME = "connection-map-python-ast"
 ANALYZER_VERSION = "0.1.0"
@@ -70,11 +71,13 @@ class PythonAnalyzer:
         self.root = root.resolve()
         self.config = config or AnalysisConfig()
         self.config.validate()
+        self.project = PythonProjects(self.root, self.config)
         self.deterministic = deterministic
         self.commit_sha = commit_sha if commit_sha is not None else _git_commit(self.root)
         self.builder = GraphBuilder()
         self.modules: list[ModuleInfo] = []
         self.module_by_name: dict[str, ModuleInfo] = {}
+        self.ambiguous_modules: set[str] = set()
         self.module_node_by_id: dict[str, ModuleInfo] = {}
         self.definitions: dict[str, DefinitionInfo] = {}
         self.definition_by_ast: dict[int, str] = {}
@@ -94,6 +97,7 @@ class PythonAnalyzer:
         self.node_name: dict[str, str] = {}
         self.node_module: dict[str, ModuleInfo] = {}
         self.return_annotations: dict[str, ast.AST] = {}
+        self.local_call_bindings: dict[str, dict[str, tuple[ast.Call, ast.AST]]] = {}
         self.resolution_evidence: dict[int, dict[str, Any]] = {}
         self._collision_counts: dict[str, int] = {}
 
@@ -106,6 +110,9 @@ class PythonAnalyzer:
         # independent of filesystem traversal order.
         for path in files:
             self._parse_module(path)
+
+        for limitation in self.project.limitations:
+            self._add_diagnostic("python_import_context", "warning", limitation, file="pyproject.toml")
 
         for module in self.modules:
             DefinitionCollector(self, module).collect()
@@ -130,6 +137,8 @@ class PythonAnalyzer:
             "settings": self.config.to_dict(),
         }
         document = self.builder.document(meta)
+        if self.project.limitations:
+            document["meta"].setdefault("extensions", {})["extraction_limitations"] = self.project.limitations
         validate_document(document)
         return document
 
@@ -163,7 +172,7 @@ class PythonAnalyzer:
             )
             return
 
-        module_name = module_name_for_path(relative_path)
+        module_name = module_name_for_path(self.project.module_path(relative_path))
         node_id = f"python:{relative_path}:module"
         lines = source.splitlines() or [""]
         module_span = {
@@ -186,7 +195,12 @@ class PythonAnalyzer:
         self.builder.add_node(node)
         module = ModuleInfo(path, relative_path, module_name, source, tree, node_id)
         self.modules.append(module)
-        self.module_by_name[module_name] = module
+        if module_name in self.module_by_name or module_name in self.ambiguous_modules:
+            self.module_by_name.pop(module_name, None)
+            self.ambiguous_modules.add(module_name)
+            self.project.limitations.append(f"Ambiguous Python module {module_name}: multiple selected source roots")
+        else:
+            self.module_by_name[module_name] = module
         self.module_node_by_id[node_id] = module
         self.module_binding_counts[node_id] = _module_binding_counts(tree)
         self.module_top_level_imports[node_id] = {
@@ -395,6 +409,8 @@ class PythonAnalyzer:
         self, binding: ImportBinding, scope_id: str, *,
         seen: frozenset[tuple[str, str]] = frozenset(), trace: list[dict] | None = None,
     ) -> str | None:
+        if binding.module_name in self.ambiguous_modules or binding.module_name.split(".", 1)[0] in self.ambiguous_modules:
+            return None
         if binding.member is None:
             module = self.module_by_name.get(binding.module_name)
             if module is not None:
@@ -494,6 +510,36 @@ class PythonAnalyzer:
     def consume_resolution_evidence(self, expression: ast.AST) -> dict[str, Any] | None:
         return self.resolution_evidence.pop(id(expression), None)
 
+    def resolve_local_receiver(self, expression: ast.Name, scope_id: str) -> str | None:
+        """Follow one completed local assignment using existing constructor/type hints."""
+        current: str | None = scope_id
+        while current is not None:
+            if expression.id in self.scope_symbols.get(current, {}):
+                binding = self.local_call_bindings.get(current, {}).get(expression.id)
+                if binding is None:
+                    return None
+                value, statement = binding
+                completed = (getattr(statement, "end_lineno", 0), getattr(statement, "end_col_offset", 0))
+                if completed >= (expression.lineno, expression.col_offset):
+                    return None
+                target = self.resolve_expr(value.func, current)
+                definition = self.definitions.get(target)
+                if definition is not None:
+                    if isinstance(definition.ast_node, ast.AsyncFunctionDef):
+                        return None
+                    if self.module_binding_counts.get(definition.module.node_id, {}).get(definition.name, 0) > 1:
+                        return None
+                resolved = self.resolve_call_result(value, current)
+                if resolved is not None:
+                    self.resolution_evidence[id(expression)] = {
+                        **self.resolution_evidence.get(id(value), {}),
+                        "assignment": {"name": expression.id, "file": self.node_module[current].relative_path,
+                                       "span": span_for(statement)},
+                    }
+                return resolved
+            current = self.scope_parent.get(current)
+        return None
+
     def resolve_expr(self, expression: ast.AST, scope_id: str) -> str | None:
         if isinstance(expression, ast.Name):
             trace: list[dict] = []
@@ -503,6 +549,12 @@ class PythonAnalyzer:
             return target
         if isinstance(expression, ast.Attribute):
             base = self.resolve_expr(expression.value, scope_id)
+            if base is None and isinstance(expression.value, ast.Name):
+                base = self.resolve_local_receiver(expression.value, scope_id)
+                if base is not None:
+                    self.resolution_evidence[id(expression)] = {
+                        **self.resolution_evidence.get(id(expression.value), {}), "attribute": expression.attr,
+                    }
             if base is None and isinstance(expression.value, ast.Name) and expression.value.id in {"self", "cls"}:
                 base = self.scope_class_context.get(scope_id)
             if base is None and isinstance(expression.value, ast.Call):
@@ -695,10 +747,14 @@ class _LocalBindingCollector(ast.NodeVisitor):
     def __init__(self, analyzer: PythonAnalyzer, scope_id: str) -> None:
         self.analyzer = analyzer
         self.scope_id = scope_id
+        self.writes: Counter[str] = Counter()
+        self.calls: dict[str, tuple[ast.Call, ast.AST]] = {}
+        self.unsafe: set[str] = set()
 
     def bind(self, name: str) -> None:
         if not name:
             return
+        self.writes[name] += 1
         symbols = self.analyzer.scope_symbols.setdefault(self.scope_id, {})
         if name not in symbols:
             symbols[name] = None
@@ -706,6 +762,47 @@ class _LocalBindingCollector(ast.NodeVisitor):
     def visit_Name(self, node: ast.Name) -> None:
         if isinstance(node.ctx, ast.Store):
             self.bind(node.id)
+        elif isinstance(node.ctx, ast.Del):
+            self.unsafe.add(node.id)
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        if len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and isinstance(node.value, ast.Call):
+            self.calls[node.targets[0].id] = (node.value, node)
+        if isinstance(node.value, ast.Name):
+            self.unsafe.add(node.value.id)  # An alias may later mutate the receiver.
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if isinstance(node.target, ast.Name) and isinstance(node.value, ast.Call):
+            self.calls[node.target.id] = (node.value, node)
+        if isinstance(node.value, ast.Name):
+            self.unsafe.add(node.value.id)
+        self.generic_visit(node)
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        if isinstance(node.ctx, ast.Store | ast.Del) and isinstance(node.value, ast.Name):
+            self.unsafe.add(node.value.id)
+        self.generic_visit(node)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        if isinstance(node.func, ast.Name) and node.func.id in {"setattr", "delattr"}:
+            if node.args and isinstance(node.args[0], ast.Name):
+                self.unsafe.add(node.args[0].id)
+        self.generic_visit(node)
+
+    def visit_Global(self, node: ast.Global) -> None:
+        self.unsafe.update(node.names)
+
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+        self.unsafe.update(node.names)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            self.writes[alias.asname or alias.name.split(".")[0]] += 1
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for alias in node.names:
+            self.writes[alias.asname or alias.name] += 1
 
     def visit_arg(self, node: ast.arg) -> None:
         self.bind(node.arg)
@@ -713,13 +810,13 @@ class _LocalBindingCollector(ast.NodeVisitor):
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         # The definition name itself is registered by DefinitionCollector;
         # the nested body is a different lexical scope.
-        return
+        self.writes[node.name] += 1
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        return
+        self.writes[node.name] += 1
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        return
+        self.writes[node.name] += 1
 
     def visit_Lambda(self, node: ast.Lambda) -> None:
         return
@@ -740,6 +837,11 @@ def _register_local_bindings(
         collector.bind(arguments.kwarg.arg)
     for statement in node.body:
         collector.visit(statement)
+    analyzer.local_call_bindings[scope_id] = {
+        name: binding for name, binding in collector.calls.items()
+        if collector.writes[name] == 1 and name not in collector.unsafe
+        and analyzer.scope_symbols.get(scope_id, {}).get(name) is None
+    }
 
 
 class RelationCollector(ast.NodeVisitor):
@@ -944,6 +1046,7 @@ class RelationCollector(ast.NodeVisitor):
             target_node = self.analyzer.builder.nodes.get(target, {})
             detail = {
                 "expression": expression,
+                "callee": _expression_text(node.func),
                 "call_kind": "attribute" if isinstance(node.func, ast.Attribute) else "direct",
                 "return_behavior": target_node.get("return_behavior"),
             }
