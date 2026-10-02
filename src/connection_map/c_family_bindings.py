@@ -7,7 +7,14 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
-from .c_family_common import CFamilyAnalysisContext, CFile, CSymbol, node_text, walk_tree
+from .c_family_common import (
+    CFamilyAnalysisContext,
+    CFile,
+    CSymbol,
+    friend_declaration_for,
+    node_text,
+    walk_tree,
+)
 
 _SCOPES = {
     "translation_unit", "namespace_definition", "class_specifier", "struct_specifier", "union_specifier",
@@ -129,14 +136,17 @@ class CBindings:
             for node in walk_tree(c_file.tree.root_node):
                 if node.type in {"declaration", "field_declaration"}:
                     scope = _scope(node.parent)
+                    is_friend = friend_declaration_for(node) is not None
                     for decl in node.children_by_field_name("declarator"):
                         if self._is_callable(c_file, node, decl):
                             self.callable_declarations[(c_file.relative_path, node.id)] = decl
-                            self._add_name(self.functions, c_file, decl, scope)
-                        else:
+                            if not is_friend:
+                                self._add_name(self.functions, c_file, decl, scope)
+                        elif not is_friend:
                             self._add_value(c_file, decl, scope)
                 elif node.type == "function_definition":
-                    self._add_name(self.functions, c_file, node.child_by_field_name("declarator"), _scope(node.parent))
+                    if friend_declaration_for(node) is None:
+                        self._add_name(self.functions, c_file, node.child_by_field_name("declarator"), _scope(node.parent))
                 elif node.type == "using_declaration":
                     scope = _scope(node.parent)
                     if scope is not None:
@@ -240,8 +250,15 @@ class CBindings:
             self.values[(c_file.relative_path, scope.id, name)].append(start if start is not None else position)
 
     def value_shadow(self, c_file: CFile, node: Any, name: str) -> bool:
+        granting_class, in_friend_body = self._friend_body_class(c_file, node)
+        excluded_class_tree = (
+            self.trees.get(granting_class.node_id) if granting_class is not None and not in_friend_body else None
+        )
         current = node
         while current is not None:
+            if excluded_class_tree is not None and current.id == excluded_class_tree.id:
+                current = current.parent
+                continue
             if any(position <= node.start_byte for position in self.values.get((c_file.relative_path, current.id, name), [])):
                 return True
             current = current.parent
@@ -275,7 +292,40 @@ class CBindings:
             visited.add(node_id)
             result.append(self.context.definitions[node_id])
             node_id = self.context.builder.nodes[node_id].get("parent_id")
+        granting_class, in_friend_body = self._friend_body_class(c_file, node)
+        if in_friend_body and granting_class is not None and granting_class.node_id not in visited:
+            insertion = 1 if result and result[0].kind in _FUNCTIONS else 0
+            result.insert(insertion, granting_class)
         return result
+
+    def _friend_body_class(self, c_file: CFile, node: Any) -> tuple[CSymbol | None, bool]:
+        current = node
+        nested_scope = False
+        friend_function = None
+        while current is not None:
+            if current.type == "function_definition":
+                if friend_declaration_for(current) is not None:
+                    friend_function = current
+                    break
+                nested_scope = True
+            elif current.type in {"lambda_expression", "class_specifier", "struct_specifier", "union_specifier"}:
+                nested_scope = True
+            current = current.parent
+        if friend_function is None:
+            return None, False
+
+        body = friend_function.child_by_field_name("body")
+        in_friend_body = body is not None and body.id in _ancestor_ids(node)
+        friend_node = friend_declaration_for(friend_function)
+        current = friend_node.parent if friend_node is not None else None
+        while current is not None:
+            if current.type in {"class_specifier", "struct_specifier", "union_specifier"}:
+                node_id = self.context.definition_by_node.get((c_file.relative_path, current.id))
+                return self.context.definitions.get(node_id), in_friend_body and not nested_scope
+            if current.type in {"function_definition", "lambda_expression"}:
+                return None, False
+            current = current.parent
+        return None, False
 
     def _is_callable(self, c_file: CFile, declaration: Any, declarator: Any) -> bool:
         while declarator.type in {"pointer_declarator", "reference_declarator", "attributed_declarator"}:
@@ -416,6 +466,8 @@ class CBindings:
         return found[0] if found else BindingResult()
 
     def _visible(self, symbol: CSymbol, c_file: CFile, node: Any) -> bool:
+        if self._hidden_friend(symbol):
+            return False
         if symbol.file_path not in self.visible_files[c_file.relative_path]:
             return False
         tree = self.trees.get(symbol.node_id)
@@ -434,6 +486,10 @@ class CBindings:
         elif scope is not None and scope.type in {"compound_statement", "function_definition", "lambda_expression"}:
             return False
         return True
+
+    def _hidden_friend(self, symbol: CSymbol) -> bool:
+        tree = self.trees.get(symbol.node_id)
+        return tree is not None and friend_declaration_for(tree) is not None
 
     def _internal(self, symbol: CSymbol) -> bool:
         if "<anonymous@" in symbol.qualified_name:
@@ -478,12 +534,30 @@ class CBindings:
         return key
 
     def _candidates(self, qualified: str, c_file: CFile, node: Any, kinds: set[str]) -> list[CSymbol]:
-        all_symbols = [s for s in self.context.symbols_by_qualified_name.get(qualified, []) if s.kind in kinds]
-        visible = [s for s in all_symbols if self._visible(s, c_file, node)]
+        all_symbols = [
+            s for s in self.context.symbols_by_qualified_name.get(qualified, [])
+            if s.kind in kinds
+        ]
+        visible = [s for s in all_symbols if not self._hidden_friend(s) and self._visible(s, c_file, node)]
         if not visible:
             return []
-        # A visible declaration may refer to a definition in another translation unit.
-        candidates = [s for s in all_symbols if s in visible or (s.declaration_kind == "definition" and not self._internal(s))]
+        # A visible declaration may refer to an ordinary definition in another translation unit.
+        candidates = [
+            s for s in all_symbols
+            if not self._hidden_friend(s)
+            and (s in visible or (s.declaration_kind == "definition" and not self._internal(s)))
+        ]
+        if kinds <= _FUNCTIONS:
+            visible_signatures = {self._parameter_key(symbol) for symbol in visible}
+            # A matching ordinary declaration exposes its hidden friend definition, but not
+            # other hidden overloads that share only the same unqualified name.
+            candidates.extend(
+                symbol for symbol in all_symbols
+                if self._hidden_friend(symbol)
+                and symbol.declaration_kind == "definition"
+                and (symbol.file_path == c_file.relative_path or not self._internal(symbol))
+                and self._parameter_key(symbol) in visible_signatures
+            )
         if kinds <= _FUNCTIONS:
             groups: dict[tuple[str, ...], list[CSymbol]] = defaultdict(list)
             for symbol in candidates:
@@ -518,8 +592,15 @@ class CBindings:
         return sorted(self.anonymous.get((c_file.relative_path, prefix), set()))
 
     def _has_using(self, c_file: CFile, node: Any, name: str) -> bool:
+        granting_class, in_friend_body = self._friend_body_class(c_file, node)
+        excluded_class_tree = (
+            self.trees.get(granting_class.node_id) if granting_class is not None and not in_friend_body else None
+        )
         current = node
         while current is not None:
+            if excluded_class_tree is not None and current.id == excluded_class_tree.id:
+                current = current.parent
+                continue
             if any(byte <= node.start_byte and (label is None or label == name)
                    for byte, label in self.using.get((c_file.relative_path, current.id), [])):
                 return True

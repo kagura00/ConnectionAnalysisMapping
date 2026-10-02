@@ -5,6 +5,7 @@ from __future__ import annotations
 import platform
 import posixpath
 import re
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -14,8 +15,10 @@ from .c_family_bindings import CBindings
 from .c_family_common import (
     CFamilyAnalysisContext,
     CFile,
+    CSymbol,
     _git_commit,
     add_relation,
+    friend_declaration_for,
     node_text,
     parse_file,
     parser_package_version,
@@ -123,15 +126,6 @@ def analyze_repository(
 
     for c_file in context.files:
         context.add_module(c_file)
-        if c_file.tree.root_node.has_error:
-            context.diagnostic(
-                "parse_error",
-                "error",
-                f"Tree-sitterが構文エラーを回復しました: {c_file.relative_path}",
-                c_file=c_file,
-                tree_node=c_file.tree.root_node,
-                details={"grammar": c_file.grammar},
-            )
 
     bindings = CBindings(context)
     for c_file in context.files:
@@ -150,6 +144,9 @@ def analyze_repository(
     bindings.prepare_inheritance()
     for c_file in context.files:
         _collect_relations(context, c_file, bindings)
+    for c_file in context.files:
+        if c_file.tree.root_node.has_error:
+            _add_parse_diagnostics(context, c_file)
 
     meta = {
         "analyzer": {"name": ANALYZER_NAME, "version": ANALYZER_VERSION},
@@ -206,6 +203,102 @@ def _language_for_path(path: Path, selected: tuple[str, ...]) -> str | None:
     return None
 
 
+_MAX_PARSE_ERROR_DETAILS = 24
+
+
+def _nearby_context_excerpt(source: bytes, node: Any, *, limit: int = 120) -> str:
+    start_byte = int(node.start_byte)
+    end_byte = int(node.end_byte)
+    start = max(0, start_byte - 60)
+    end = min(len(source), max(end_byte, start_byte) + 60)
+    excerpt = re.sub(r"\s+", " ", source[start:end].decode("utf-8", errors="replace")).strip()
+    if start:
+        excerpt = "…" + excerpt
+    if end < len(source):
+        excerpt += "…"
+    if len(excerpt) > limit:
+        excerpt = excerpt[: limit - 1] + "…"
+    return excerpt
+
+
+def _add_parse_diagnostics(context: CFamilyAnalysisContext, c_file: CFile) -> None:
+    """Record one bounded file summary plus local Tree-sitter recovery spans."""
+
+    markers: list[tuple[Any, bool]] = []
+    seen: set[tuple[int, int, str, bool]] = set()
+    for node in walk_tree(c_file.tree.root_node):
+        missing = bool(node.is_missing)
+        if node.type != "ERROR" and not missing:
+            continue
+        # Some grammars nest same-span ERROR nodes. They describe one recovery
+        # range, while a missing anonymous token at that point remains distinct.
+        key = (int(node.start_byte), int(node.end_byte), str(node.type), missing)
+        if key not in seen:
+            seen.add(key)
+            markers.append((node, missing))
+    markers.sort(key=lambda item: (
+        int(item[0].start_byte), int(item[0].end_byte), item[1], str(item[0].type),
+    ))
+    error_count = sum(1 for _, missing in markers if not missing)
+    missing_count = sum(1 for _, missing in markers if missing)
+    emitted = markers[:_MAX_PARSE_ERROR_DETAILS]
+    extracted_kinds = Counter(
+        symbol.kind for symbol in context.definitions.values() if symbol.file_path == c_file.relative_path
+    )
+    details: dict[str, Any] = {
+        "grammar": c_file.grammar,
+        "error_node_count": error_count,
+        "missing_token_count": missing_count,
+        "detail_limit": _MAX_PARSE_ERROR_DETAILS,
+        "details_emitted": len(emitted),
+        "details_omitted": len(markers) - len(emitted),
+        "extracted_kind_counts": dict(sorted(extracted_kinds.items())),
+    }
+    suffix = c_file.path.suffix.lower()
+    if suffix in {".inl", ".ipp"}:
+        details["analysis_kind"] = "standalone_include_fragment"
+        details["fragment_limitations"] = [
+            "Parsed as a standalone fragment; including translation-unit declarations and macro context are not supplied.",
+            "Recovered symbols are partial extraction and do not establish complete C++ semantics.",
+        ]
+    context.diagnostic(
+        "parse_error",
+        "error",
+        f"Tree-sitterが構文エラーを回復しました: {c_file.relative_path}",
+        c_file=c_file,
+        details=details,
+    )
+    for node, missing in emitted:
+        excerpt = re.sub(r"\s+", " ", node_text(node, c_file.source)).strip()
+        if len(excerpt) > 120:
+            excerpt = excerpt[:117] + "..."
+        details = {
+            "node_type": node.type,
+            "is_missing": missing,
+            "excerpt": excerpt,
+        }
+        if missing:
+            context_excerpt = _nearby_context_excerpt(c_file.source, node)
+            details["context_excerpt"] = context_excerpt
+            message = f"Tree-sitterが欠落した構文要素を補完しました: {node.type}"
+            if context_excerpt:
+                message += f" (周辺: {context_excerpt})"
+            code = "parse_missing_token"
+        else:
+            message = "Tree-sitter ERROR構文を検出しました"
+            if excerpt:
+                message += f": {excerpt}"
+            code = "parse_error_node"
+        context.diagnostic(
+            code,
+            "error",
+            message,
+            c_file=c_file,
+            tree_node=node,
+            details=details,
+        )
+
+
 def _scope_parent(context: CFamilyAnalysisContext, c_file: CFile, node: Any) -> str:
     """Return the nearest lexical scope, skipping declaration wrappers."""
 
@@ -218,6 +311,128 @@ def _scope_parent(context: CFamilyAnalysisContext, c_file: CFile, node: Any) -> 
                 return node_id
         current = current.parent
     return c_file.module_id
+
+
+def _friend_namespace_owner(context: CFamilyAnalysisContext, c_file: CFile, friend_node: Any) -> str | None:
+    current = friend_node.parent
+    granting_class = None
+    while current is not None:
+        if current.type in {"function_definition", "lambda_expression"}:
+            return None
+        if current.type in {"class_specifier", "struct_specifier", "union_specifier"}:
+            granting_class = current
+            break
+        current = current.parent
+    if granting_class is None:
+        return None
+
+    current = granting_class.parent
+    while current is not None:
+        if current.type in {"function_definition", "lambda_expression"}:
+            # A local class cannot safely introduce an ordinary namespace name.
+            return None
+        if current.type == "namespace_definition":
+            return context.definition_by_node.get((c_file.relative_path, current.id))
+        if current.type == "translation_unit":
+            return c_file.module_id
+        current = current.parent
+    return None
+
+
+def _friend_granting_class(context: CFamilyAnalysisContext, c_file: CFile, friend_node: Any) -> CSymbol | None:
+    current = friend_node.parent
+    while current is not None:
+        if current.type in {"function_definition", "lambda_expression"}:
+            return None
+        if current.type in {"class_specifier", "struct_specifier", "union_specifier"}:
+            node_id = context.definition_by_node.get((c_file.relative_path, current.id))
+            return context.definitions.get(node_id) if node_id is not None else None
+        current = current.parent
+    return None
+
+
+def _friend_owner_scope(
+    context: CFamilyAnalysisContext,
+    c_file: CFile,
+    friend_node: Any,
+    name: str,
+) -> tuple[str, str, str, str] | None:
+    namespace_id = _friend_namespace_owner(context, c_file, friend_node)
+    if namespace_id is None or not name or "<" in name or ">" in name:
+        return None
+    namespace_symbol = context.definitions.get(namespace_id)
+    namespace_name = namespace_symbol.qualified_name if namespace_symbol else ""
+    if "::" not in name:
+        qualified_name = f"{namespace_name}::{name}" if namespace_name else name
+        return namespace_id, qualified_name, "function", "namespace"
+
+    absolute = name.startswith("::")
+    qualifier, simple_name = name.rsplit("::", 1)
+    qualifier = qualifier.removeprefix("::")
+    if not simple_name:
+        return None
+    if not qualifier and absolute:
+        return c_file.module_id, simple_name, "function", "namespace"
+
+    if absolute:
+        candidate_names = [qualifier]
+    else:
+        prefixes: list[str] = []
+        current_id = namespace_id
+        while current_id in context.definitions:
+            symbol = context.definitions[current_id]
+            if symbol.kind == "namespace":
+                prefixes.append(symbol.qualified_name)
+            current_id = context.builder.nodes[current_id].get("parent_id")
+        prefixes.append("")
+        candidate_names = [f"{prefix}::{qualifier}" if prefix else qualifier for prefix in prefixes]
+
+    for candidate_name in candidate_names:
+        candidates = [
+            symbol for symbol in context.symbols_by_qualified_name.get(candidate_name, [])
+            if symbol.kind in {"namespace", "class", "type"}
+        ]
+        if not candidates:
+            continue
+        if any(
+            symbol.kind == "type"
+            and context.builder.nodes[symbol.node_id]["extensions"].get("declaration_form") not in {"struct", "union"}
+            for symbol in candidates
+        ):
+            # An alias names another type; it does not own that type's members.
+            # Without confirming the target, do not manufacture Alias::member.
+            return None
+        owner_kinds = {"namespace" if symbol.kind == "namespace" else "class" for symbol in candidates}
+        if len(owner_kinds) != 1:
+            return None
+        owner_kind = next(iter(owner_kinds))
+        same_file = [symbol for symbol in candidates if symbol.file_path == c_file.relative_path]
+        owner = sorted(same_file or candidates, key=lambda symbol: symbol.node_id)[0]
+        callable_kind = "method" if owner_kind == "class" else "function"
+        return owner.node_id, f"{owner.qualified_name}::{simple_name}", callable_kind, owner_kind
+    return None
+
+
+def _friend_declarator_name(node: Any | None, source: bytes) -> str | None:
+    """Read a friend declarator name while retaining an absolute ``::`` prefix."""
+
+    if node is None:
+        return None
+    if node.type in {"identifier", "field_identifier", "type_identifier", "namespace_identifier"}:
+        return node_text(node, source).strip()
+    if node.type in {"qualified_identifier", "scoped_identifier"}:
+        return re.sub(r"\s+", "", node_text(node, source))
+    for field_name in ("declarator", "name"):
+        child = node.child_by_field_name(field_name)
+        if child is not None:
+            result = _friend_declarator_name(child, source)
+            if result:
+                return result
+    for child in node.named_children:
+        result = _friend_declarator_name(child, source)
+        if result:
+            return result
+    return None
 
 
 def _collect_definitions(
@@ -238,7 +453,33 @@ def _collect_definitions(
                 current = current.parent
             if current is not None:
                 continue
-        parent_id = _scope_parent(context, c_file, node)
+        friend_node = friend_declaration_for(node)
+        if friend_node is not None:
+            friend_scope = _friend_owner_scope(context, c_file, friend_node, name)
+            if friend_scope is None:
+                context.diagnostic(
+                    "friend_scope_unresolved",
+                    "warning",
+                    f"friend callableの所有scopeを解析範囲で特定できません: {name}",
+                    c_file=c_file,
+                    tree_node=friend_node,
+                    details={"owner_resolution": "uncertain", "name": name},
+                )
+                continue
+            parent_id, qualified_name, kind, owner_kind = friend_scope
+            granting_class = _friend_granting_class(context, c_file, friend_node)
+            extensions = {
+                **extensions,
+                "friend_declaration": True,
+                "ordinary_lookup": "hidden",
+                "friend_owner_kind": owner_kind,
+            }
+            if granting_class is not None:
+                extensions["friend_of"] = granting_class.qualified_name
+        else:
+            parent_id = _scope_parent(context, c_file, node)
+            if kind != "namespace":
+                parent_id, qualified_name = _qualified_scope(context, c_file, node, name, parent_id)
         if kind == "namespace":
             # Compact C++17 syntax still introduces every namespace segment.
             for segment in name.split("::"):
@@ -249,7 +490,6 @@ def _collect_definitions(
                     declaration_kind=declaration_kind, parent_id=parent_id,
                 )
             continue
-        parent_id, qualified_name = _qualified_scope(context, c_file, node, name, parent_id)
         parent_symbol = context.definitions.get(parent_id)
         if kind == "function" and parent_symbol is not None and parent_symbol.kind in {"class", "type"}:
             kind = "method"
@@ -323,9 +563,14 @@ def _definition_candidate(
         return "type", name, "alias", {"declaration_form": "typedef"}
     if node_type == "function_definition":
         declarator = node.child_by_field_name("declarator")
-        name = _declarator_name(declarator, c_file.source) if declarator else None
+        friend = friend_declaration_for(node)
+        name = (
+            _friend_declarator_name(declarator, c_file.source) if friend is not None else _declarator_name(declarator, c_file.source)
+        ) if declarator else None
         if not name:
             return None
+        if friend is not None:
+            return "function", name, "definition", {"has_body": True}
         parent_id = _scope_parent(context, c_file, node)
         parent_symbol = context.definitions.get(parent_id) if parent_id else None
         parent_kind = parent_symbol.kind if parent_symbol else None
@@ -335,6 +580,12 @@ def _definition_candidate(
         declarator = bindings.declaration(c_file, node)
         if declarator is None:
             return None
+        friend = friend_declaration_for(node)
+        if friend is not None:
+            name = _friend_declarator_name(declarator, c_file.source)
+            if not name:
+                return None
+            return "function", name, "prototype", {"has_body": False}
         parent_id = _scope_parent(context, c_file, node)
         parent_symbol = context.definitions.get(parent_id) if parent_id else None
         parent_kind = parent_symbol.kind if parent_symbol else None
