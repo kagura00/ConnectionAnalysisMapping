@@ -606,3 +606,96 @@ def test_investigation_http_uses_the_registered_root_and_exact_character_budget(
         finally:
             server.shutdown()
             thread.join()
+
+
+def test_summary_describes_actual_scope_and_a_concrete_follow_up(investigation_graph):
+    root, query, ids = investigation_graph
+    packet = build_investigation(
+        query, [ids["Service.ping"]], root=root, direction="in", relations=["calls"], max_chars=20000
+    )
+    summary = packet["summary"]
+    assert list(packet).index("summary") < list(packet).index("nodes")
+    assert summary["scope"] == {"direction": "in", "depth": 1, "relations": ["calls"], "resolution": "all"}
+    assert summary["returned"]["nodes"] == len(packet["nodes"])
+    assert summary["returned"]["edges"] == len(packet["edges"])
+    assert summary["returned"]["source_excerpts"] == sum(bool(s.get("ranges")) for s in packet["sources"])
+    assert summary["returned"]["related_tests"] == len(packet["related_tests"])
+    focus = next(n for n in packet["nodes"] if n["ref"] == packet["focus"][0])
+    follow = summary["follow_up"]
+    assert follow["file"] == focus["file"] and follow["line"] == focus["line"]
+    assert follow["directions"] == ["in"] and follow["relations"] == ["calls"]
+    assert select_targets(query, file=follow["file"], line=follow["line"]) == [focus["id"]]
+    assert packet["budget"]["used_chars"] == len(encode_packet(packet)) <= 20000
+
+
+def test_summary_distinguishes_character_budget_from_query_limits(tmp_path):
+    write(tmp_path / "app.py", "def leaf():\n    return 1\n\n" + "\n".join(
+        f"def caller_{i}():\n    return leaf()\n" for i in range(20)
+    ))
+    query = GraphQuery(analyze_repository(tmp_path, deterministic=True))
+    target = select_targets(query, symbol="leaf")[0]
+    packet = build_investigation(
+        query, [target], root=tmp_path, snippets=False, max_chars=6000, max_nodes=200, max_edges=400
+    )
+    omissions = packet["summary"]["omissions"]
+    assert packet["budget"]["limited"] is True
+    assert omissions["character_budget"]["edges"] > 0
+    assert "neighborhood_limits" not in omissions
+    assert "depth_limit" not in omissions
+    assert "record_caps" not in omissions
+    for key, count in omissions["character_budget"].items():
+        assert count == packet["truncation"][key]
+    assert packet["budget"]["used_chars"] == len(encode_packet(packet)) <= 6000
+    assert packet["summary"]["returned"]["edges"] == len(packet["edges"])
+
+
+def test_summary_depth_limit_does_not_claim_character_budget_omission(tmp_path):
+    write(tmp_path / "app.py",
+          "def leaf():\n    return 1\n\ndef service():\n    return leaf()\n\ndef entry():\n    return service()\n")
+    query = GraphQuery(analyze_repository(tmp_path, deterministic=True))
+    target = select_targets(query, symbol="entry")[0]
+    packet = build_investigation(query, [target], root=tmp_path, direction="out", depth=1, max_chars=20000)
+    assert packet["budget"]["limited"] is False
+    assert packet["summary"]["omissions"]["depth_limit"] is True
+    assert "character_budget" not in packet["summary"]["omissions"]
+    assert packet["summary"]["follow_up"]["directions"] == ["out"]
+
+
+def test_summary_record_caps_remain_visible_without_character_budget_limit(tmp_path):
+    write(tmp_path / "app.py", "def leaf():\n    return 1\n\n" + "\n".join(
+        f"def caller_{i}():\n    return leaf()\n" for i in range(16)
+    ))
+    query = GraphQuery(analyze_repository(tmp_path, deterministic=True))
+    target = select_targets(query, symbol="leaf")[0]
+    packet = build_investigation(
+        query, [target], root=tmp_path, max_chars=200000, max_nodes=200, max_edges=400
+    )
+    assert packet["budget"]["limited"] is False
+    assert packet["summary"]["omissions"]["record_caps"]["sources"] == 5
+    assert "character_budget" not in packet["summary"]["omissions"]
+    assert packet["summary"]["returned"]["source_excerpts"] == 12
+    assert packet["budget"]["used_chars"] == len(encode_packet(packet)) <= 200000
+
+
+def test_summary_neighborhood_cap_does_not_invent_unseen_counts(tmp_path):
+    write(tmp_path / "app.py", "def leaf():\n    return 1\n\n" + "\n".join(
+        f"def caller_{i}():\n    return leaf()\n" for i in range(5)
+    ))
+    query = GraphQuery(analyze_repository(tmp_path, deterministic=True))
+    target = select_targets(query, symbol="leaf")[0]
+    packet = build_investigation(
+        query, [target], root=tmp_path, max_nodes=2, max_edges=100, max_chars=20000
+    )
+    assert packet["summary"]["omissions"]["neighborhood_limits"] is True
+    assert packet["budget"]["limited"] is False
+    assert "character_budget" not in packet["summary"]["omissions"]
+    assert packet["counts"]["nodes"] == packet["summary"]["returned"]["nodes"] == 2
+
+
+def test_summary_reports_unavailable_source_separately(investigation_graph):
+    root, query, ids = investigation_graph
+    write(root / "app.py", "def changed():\n    return 2\n")
+    packet = build_investigation(query, [ids["Service.ping"]], root=root, max_chars=20000)
+    assert packet["freshness"]["status"] == "stale"
+    assert packet["summary"]["returned"]["source_excerpts"] == 0
+    assert packet["summary"]["omissions"]["source_unavailable"] is True

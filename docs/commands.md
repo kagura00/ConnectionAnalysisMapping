@@ -105,6 +105,19 @@ Linux/macOSのportable版:
 
 既定では生成物、カバレッジ出力、テスト用フォルダー、`*.test.*`、`*.spec.*`を解析対象から除外する。設定ファイルで変更できる。
 
+### 外部利用の出力先
+
+`analyze`・`investigate`・`context`は`--external-dir DIR`を指定できる。`context`では`--root PATH`も指定する。
+
+| 指定 | 保存先と優先順 |
+| --- | --- |
+| `--external-dir DIR` | analyzeのworkspace、investigateのcache、grammar cacheをDIR配下へまとめる。個別CLI指定が優先し、このprofileは既存の環境変数・既定値より優先 |
+| `--grammar-cache DIR` | analyze/investigateでTree-sitterのgrammar保存先を指定 |
+| `analyze --workspace DIR` | profileのworkspace指定を上書き |
+| `investigate --cache-dir DIR` | profileのinvestigation-cache指定を上書き |
+
+実際の保存先と選択理由はstderrへ表示する。profileでは対象内・対象と同じ場所・対象を含む上位フォルダー・既存のsymlink/reparse経由の保存先を事前に拒否する。`analyze`の相対`--output`は従来どおり対象root基準なので、profileと併用する場合は対象外の絶対パスを使う。不正な個別指定はエラーになる。外部profileでは保存領域同士の重なりも拒否する。追加出力は、個別指定した保存領域とprofile配下のworkspace・investigation-cache・grammar-cacheの外へ置く。台帳や既存cacheの上書きを防ぐためで、profile直下のpacket.json等は利用できる。[外部利用の例](ai-context.md#対象の外へ結果とキャッシュをまとめる)も参照。
+
 ### `serve`
 
 解析結果またはバンドルをローカルWebサーバーで公開する。

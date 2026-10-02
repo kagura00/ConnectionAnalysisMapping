@@ -19,6 +19,16 @@ from .contract import canonical_sha256, validate_document
 from .evidence import check_freshness
 from .investigation import build_investigation, encode_packet, repository_path, select_targets, write_packet_stdout
 from .language_registry import language_for_path
+from .output_profile import (
+    PathSetting,
+    absolute_path,
+    configured_grammar_cache,
+    current_grammar_cache,
+    derived_path,
+    preflight_destinations,
+    preflight_profile_layout,
+    report_paths,
+)
 from .query import GraphQuery
 
 
@@ -68,21 +78,42 @@ def configuration(root: Path, path: Path | None, language: str | None, include_t
     return AnalysisConfig(language="mixed", languages=sorted(languages), include_tests=tests)
 
 
-def _atomic_json(path: Path, value: dict) -> None:
+def _atomic_json(path: Path, value: dict, *, strict_root: Path | None = None) -> None:
+    if strict_root is not None:
+        preflight_destinations(strict_root, [("investigation cache file", path, "file")])
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".analysis-", suffix=".tmp", delete=False) as handle:
-        temporary = Path(handle.name)
-        handle.write(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    temporary = path.with_name(f".analysis-{os.urandom(16).hex()}.tmp")
+    if strict_root is not None:
+        preflight_destinations(
+            strict_root,
+            [("investigation cache file", path, "file"), ("investigation cache temporary", temporary, "file")],
+        )
     try:
+        with temporary.open("xb") as handle:
+            handle.write(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
 
 
 def prepare_analysis(
-    root: Path, config: AnalysisConfig, cache_dir: Path | None, *, refresh: bool = False
+    root: Path,
+    config: AnalysisConfig,
+    cache_dir: Path | None,
+    *,
+    refresh: bool = False,
+    strict_root: Path | None = None,
 ) -> tuple[dict, dict]:
-    cache = (cache_dir or Path(tempfile.gettempdir()) / "connection-map-investigations").resolve()
+    requested_cache = cache_dir or Path(tempfile.gettempdir()) / "connection-map-investigations"
+    if strict_root is not None:
+        preflight_destinations(
+            strict_root,
+            [("investigation cache", requested_cache, "directory")],
+            storage_roots=[("investigation cache", requested_cache)],
+        )
+        cache = absolute_path(requested_cache)
+    else:
+        cache = requested_cache.resolve()
     if cache.is_relative_to(root):
         raise ValueError("cache directory must be outside the target repository")
     identity = {"root": str(root), "settings": config.to_dict(), "analyzer_fingerprint": _fingerprint()}
@@ -90,6 +121,17 @@ def prepare_analysis(
     directory = cache / key
     path = directory / "analysis.json"
     metadata = directory / "cache.json"
+    if strict_root is not None:
+        preflight_destinations(
+            strict_root,
+            [
+                ("investigation cache", cache, "directory"),
+                ("investigation cache identity", directory, "directory"),
+                ("investigation cache analysis", path, "file"),
+                ("investigation cache metadata", metadata, "file"),
+            ],
+            storage_roots=[("investigation cache", cache)],
+        )
     reason = "explicit_refresh" if refresh else "cache_unavailable"
     if not refresh and path.is_file() and metadata.is_file():
         try:
@@ -115,8 +157,8 @@ def prepare_analysis(
     document = analyze_repository(root, config, deterministic=True)
     if check_freshness(document, root)["status"] != "current":
         raise ValueError("sources changed or could not be verified during analysis; retry after edits finish")
-    _atomic_json(path, document)
-    _atomic_json(metadata, {"identity": identity, "sha256": canonical_sha256(document)})
+    _atomic_json(path, document, strict_root=strict_root)
+    _atomic_json(metadata, {"identity": identity, "sha256": canonical_sha256(document)}, strict_root=strict_root)
     return document, {
         "cache": "rebuilt",
         "reason": reason,
@@ -268,6 +310,64 @@ def changed_targets(query: GraphQuery, root: Path, base: str) -> tuple[list[str]
 
 def run_investigate(args) -> int:
     root = ensure_repository_root(args.root)
+    external_dir = args.external_dir
+    strict_profile = external_dir is not None
+    if args.cache_dir is not None:
+        cache_setting = PathSetting(args.cache_dir, "--cache-dir")
+    elif strict_profile:
+        cache_setting = PathSetting(derived_path(external_dir, "investigation-cache"), "--external-dir")
+    else:
+        cache_setting = PathSetting(Path(tempfile.gettempdir()) / "connection-map-investigations", "OS temporary default")
+    if args.grammar_cache is not None:
+        grammar_setting = PathSetting(args.grammar_cache, "--grammar-cache")
+    elif strict_profile:
+        grammar_setting = PathSetting(derived_path(external_dir, "grammar-cache"), "--external-dir")
+    else:
+        grammar_setting = current_grammar_cache()
+    output_setting = PathSetting(args.output, "--output") if args.output is not None else PathSetting(None, "default stdout")
+
+    if strict_profile:
+        destinations = [
+            ("external profile", external_dir, "directory"),
+            ("investigation cache", cache_setting.path, "directory"),
+        ]
+        storage_roots = [("investigation cache", cache_setting.path)]
+        if grammar_setting.path is not None:
+            destinations.append(("grammar cache", grammar_setting.path, "directory"))
+            storage_roots.append(("grammar cache", grammar_setting.path))
+        if args.output is not None:
+            destinations.append(("investigation packet", args.output, "file"))
+        preflight_profile_layout(external_dir, storage_roots, args.output)
+        preflight_destinations(root, destinations, storage_roots=storage_roots)
+    elif args.grammar_cache is not None:
+        preflight_destinations(
+            root,
+            [("grammar cache", grammar_setting.path, "directory")],
+            storage_roots=[("grammar cache", grammar_setting.path)],
+        )
+
+    if strict_profile or args.cache_dir is not None or args.grammar_cache is not None or args.output is not None:
+        report_paths(
+            [
+                ("external profile", PathSetting(external_dir, "--external-dir") if strict_profile else None),
+                ("investigation cache", cache_setting),
+                ("investigation packet", output_setting),
+                ("grammar cache", grammar_setting),
+            ]
+        )
+    grammar_redirect = grammar_setting.path if args.grammar_cache is not None or strict_profile else None
+    with configured_grammar_cache(absolute_path(grammar_redirect) if grammar_redirect is not None else None):
+        return _run_investigate_with_paths(
+            args,
+            root,
+            cache_setting.path,
+            strict_root=root if strict_profile else None,
+        )
+
+
+def _run_investigate_with_paths(
+    args, root: Path, cache_dir: Path, *, strict_root: Path | None = None
+) -> int:
     if args.changed and (args.node or args.symbol or args.file or args.line):
         raise ValueError("changed cannot be combined with node/symbol/file/line")
     if not args.changed and not (args.node or args.symbol or args.file):
@@ -286,7 +386,7 @@ def run_investigate(args) -> int:
     if args.file:
         repository_path(root, args.file)
     config = configuration(root, args.config, args.language, args.include_tests)
-    document, workflow = prepare_analysis(root, config, args.cache_dir, refresh=args.refresh)
+    document, workflow = prepare_analysis(root, config, cache_dir, refresh=args.refresh, strict_root=strict_root)
     query = GraphQuery(document)
     changes, anchors = [], {}
     if args.changed:
@@ -337,6 +437,8 @@ def run_investigate(args) -> int:
     if args.output is None:
         write_packet_stdout(payload)
     else:
+        if strict_root is not None:
+            preflight_destinations(strict_root, [("investigation packet", args.output, "file")])
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(payload, encoding="utf-8", newline="\n")
         print(f"wrote investigation {args.output} ({len(payload)} characters)")

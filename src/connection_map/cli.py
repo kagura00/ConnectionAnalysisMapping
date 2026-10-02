@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 import uuid
@@ -23,11 +24,21 @@ from .contract import ContractError, validate_document
 from .distribution import install_core, rollback_core
 from .evidence import check_freshness, coverage_summary
 from .manual import ManualOverlayError, load_manual, merge_manual, validate_manual
+from .output_profile import (
+    PathSetting,
+    absolute_path,
+    configured_grammar_cache,
+    current_grammar_cache,
+    derived_path,
+    preflight_destinations,
+    preflight_profile_layout,
+    report_paths,
+)
 from .query import GraphQuery
 from .report import summarize_document
 from .scaffold import initialize_target
 from .server import serve_analysis, serve_workspace
-from .workspace import Workspace, WorkspaceError, workspace_from_env
+from .workspace import WORKSPACE_ENV, Workspace, WorkspaceError, workspace_from_env
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -47,6 +58,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="output JSON path (central workspace mode uses its repository data path by default)",
     )
     analyze.add_argument("--workspace", type=Path, help="central workspace data directory; otherwise use CONNECTION_MAP_WORKSPACE")
+    analyze.add_argument("--external-dir", type=Path, help="strict external-output profile root")
+    analyze.add_argument("--grammar-cache", type=Path, help="Tree-sitter grammar cache directory")
     analyze.add_argument("--deterministic", action="store_true", help="omit time-varying metadata")
     analyze.add_argument("--fail-on-error", action="store_true", help="save the graph but exit 3 for partial analysis")
     analyze.add_argument(
@@ -112,6 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
     context.add_argument("--max-nodes", type=int, default=60)
     context.add_argument("--max-edges", type=int, default=120)
     context.add_argument("--root", type=Path, help="compare the snapshot with current selected source files")
+    context.add_argument("--external-dir", type=Path, help="strict external-output profile; requires --root")
     context.add_argument("--output", type=Path, help="optional context JSON path")
     context.add_argument("--compact", action="store_true", help="emit a bounded investigation packet")
     context.add_argument("--snippets", action="store_true", help="include verified source excerpts (requires compact)")
@@ -128,6 +142,8 @@ def build_parser() -> argparse.ArgumentParser:
     investigate.add_argument("--changed", action="store_true", help="select declarations changed relative to base")
     investigate.add_argument("--base", default="HEAD", help="Git commit/ref for changed (default: HEAD)")
     investigate.add_argument("--cache-dir", type=Path, help="cache outside target; default: OS temporary directory")
+    investigate.add_argument("--external-dir", type=Path, help="strict external-output profile root")
+    investigate.add_argument("--grammar-cache", type=Path, help="Tree-sitter grammar cache directory")
     investigate.add_argument("--refresh", action="store_true", help="rebuild instead of reusing verified cache")
     investigate.add_argument("--include-tests", dest="include_tests", action="store_true", default=None)
     investigate.add_argument("--exclude-tests", dest="include_tests", action="store_false")
@@ -228,9 +244,83 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _run_analyze(args: argparse.Namespace) -> int:
     root = ensure_repository_root(args.root)
+    external_dir = args.external_dir
+    strict_profile = external_dir is not None
+    if args.workspace is not None:
+        workspace_setting = PathSetting(args.workspace, "--workspace")
+    elif strict_profile:
+        workspace_setting = PathSetting(derived_path(external_dir, "workspace"), "--external-dir")
+    elif os.environ.get(WORKSPACE_ENV):
+        workspace_setting = PathSetting(Path(os.environ[WORKSPACE_ENV]), WORKSPACE_ENV)
+    else:
+        workspace_setting = None
+    if args.grammar_cache is not None:
+        grammar_setting = PathSetting(args.grammar_cache, "--grammar-cache")
+    elif strict_profile:
+        grammar_setting = PathSetting(derived_path(external_dir, "grammar-cache"), "--external-dir")
+    else:
+        grammar_setting = current_grammar_cache()
+    if strict_profile and args.output is not None and not args.output.is_absolute():
+        raise ValueError("--output must be absolute when --external-dir is used")
+    output_setting = None
+    if args.output is not None:
+        output_path = args.output if args.output.is_absolute() else root / args.output
+        output_setting = PathSetting(output_path, "--output")
+    elif workspace_setting is None:
+        output_setting = PathSetting(root / ".connection-map/snapshots/analysis.json", "local default")
+
+    if strict_profile:
+        destinations = [("external profile", external_dir, "directory")]
+        storage_roots = []
+        if workspace_setting is not None:
+            destinations.append(("analysis workspace", workspace_setting.path, "directory"))
+            storage_roots.append(("analysis workspace", workspace_setting.path))
+        if grammar_setting is not None and grammar_setting.path is not None:
+            destinations.append(("grammar cache", grammar_setting.path, "directory"))
+            storage_roots.append(("grammar cache", grammar_setting.path))
+        if output_setting is not None and output_setting.path is not None:
+            destinations.append(("analysis output", output_setting.path, "file"))
+        preflight_profile_layout(external_dir, storage_roots, args.output)
+        preflight_destinations(root, destinations, storage_roots=storage_roots)
+    elif args.grammar_cache is not None:
+        preflight_destinations(
+            root,
+            [("grammar cache", grammar_setting.path, "directory")],
+            storage_roots=[("grammar cache", grammar_setting.path)],
+        )
+
+    workspace_storage_setting = None
+    if workspace_setting is not None and workspace_setting.path is not None:
+        workspace_storage_setting = PathSetting(
+            workspace_setting.path / "repositories",
+            f"{workspace_setting.origin}; repository ID assigned at registration",
+        )
+        if strict_profile:
+            preflight_destinations(
+                root,
+                [("workspace analysis storage", workspace_storage_setting.path, "directory")],
+            )
+    if strict_profile or args.workspace is not None or args.grammar_cache is not None or workspace_setting is not None:
+        report_paths(
+            [
+                ("external profile", PathSetting(external_dir, "--external-dir") if strict_profile else None),
+                ("analysis workspace", workspace_setting),
+                ("workspace analysis storage", workspace_storage_setting),
+                ("analysis output", output_setting),
+                ("grammar cache", grammar_setting),
+            ]
+        )
+    workspace = Workspace(workspace_setting.path) if workspace_setting is not None else None
+    grammar_redirect = grammar_setting.path if args.grammar_cache is not None or strict_profile else None
+    with configured_grammar_cache(absolute_path(grammar_redirect) if grammar_redirect is not None else None):
+        return _run_analyze_with_paths(args, root, workspace, strict_profile=strict_profile)
+
+
+def _run_analyze_with_paths(
+    args: argparse.Namespace, root: Path, workspace: Workspace | None, *, strict_profile: bool = False
+) -> int:
     if args.config is not None and not args.config.is_file():
         raise FileNotFoundError(args.config)
-    workspace = Workspace(args.workspace) if args.workspace is not None else workspace_from_env()
     record = None
     registered_new = False
     previous_active_repository_id = None
@@ -282,6 +372,9 @@ def _run_analyze(args: argparse.Namespace) -> int:
             central_output = workspace.path_for(record, record.analysis_path)
             requested_output = args.output if args.output is not None and args.output.is_absolute() else root / args.output if args.output is not None else central_output
             output = requested_output
+            if strict_profile:
+                preflight_destinations(root, [("workspace analysis output", central_output, "file")])
+                report_paths([("workspace analysis output", PathSetting(central_output, "workspace registered record"))])
             record = workspace.publish_analysis(record, document)
             published = True
             if output.resolve() != central_output.resolve():
@@ -431,6 +524,25 @@ def _run_report(args: argparse.Namespace) -> int:
 
 
 def _run_context(args: argparse.Namespace) -> int:
+    if args.external_dir is not None:
+        if args.root is None:
+            raise ValueError("context --external-dir requires --root")
+        root = ensure_repository_root(args.root)
+        output_setting = PathSetting(absolute_path(args.output) if args.output is not None else None,
+                                     "--output" if args.output is not None else "default stdout")
+        preflight_profile_layout(args.external_dir, [], args.output)
+        preflight_destinations(
+            root,
+            [("external profile", args.external_dir, "directory")]
+            + ([("context output", args.output, "file")] if args.output is not None else []),
+        )
+        report_paths(
+            [
+                ("external profile", PathSetting(args.external_dir, "--external-dir")),
+                ("context output", output_setting),
+            ]
+        )
+        args.root = root
     if args.compact:
         from .investigation import build_investigation, encode_packet, write_packet_stdout
         result = build_investigation(GraphQuery(_load_analysis(args.input)), [args.node], root=args.root,

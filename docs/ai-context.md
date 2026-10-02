@@ -14,12 +14,28 @@ uv run connection-map investigate --root C:\path\to\repository --changed --base 
 
 設定がなければ言語を拡張子から選び、テストを含める。`.connection-map/config.toml`があればその範囲を尊重する。テストが除外されている場合は`--include-tests`を指定する。共通のヘッダー拡張子や方言が曖昧な場合は`--language`または`--config`で選ぶ。自動選択は対応外ファイルも解析できるという意味ではない。
 
+## 対象の外へ結果とキャッシュをまとめる
+
+```powershell
+uv run connection-map analyze --root C:\projects\sample --external-dir C:\analysis\connection-map
+uv run connection-map investigate --root C:\projects\sample --symbol Service.handle --external-dir C:\analysis\connection-map
+```
+
+明示した`--external-dir`の下へ`workspace/`、`investigation-cache/`、`grammar-cache/`を配置する。対象リポジトリへの暗黙の結果保存を避ける用途である。Python環境や追加依存そのものの導入先は別に選ぶ。
+
+優先順は個別のCLI指定、外部profile、既存の環境変数・既定値。`analyze --workspace`、`investigate --cache-dir`、両コマンドの`--grammar-cache`で個別に変更できる。profileを省略した既存のlocal利用は維持する。
+
+profile利用時は、実際の保存先と選択理由をstderrへ表示する。対象内・対象と同じ場所・対象を含む上位フォルダー、既存のsymlink/reparse経由の出力先は処理前に拒否する。上書き指定が不正でも別の場所へ切り替えない。`analyze --output relative.json`は対象rootからの相対パスなので、profile利用時は拒否される。追加出力は対象外の絶対パスで指定する。外部profileでは保存領域同士の重なりも拒否する。追加出力は、個別指定した保存領域とprofile配下のworkspace・investigation-cache・grammar-cacheの外へ置く。台帳や既存cacheの上書きを防ぐためで、profile直下のpacket.json等は利用できる。
+
+`context --external-dir`は`--root`も必要。保存済みの解析を読むためworkspace・解析cache・grammar cacheを作らず、指定した出力ファイルを検証する。調査JSONのstdoutへ出力先説明を混ぜない。パス検証はOSによる隔離や、別processによる同時のパス差し替えへの保証ではない。
+
 ## 調査JSONの読み方
 
 形式は`connection-analysis-investigation`。既存のGraph Contract v1と`context`の形式は維持する。既定の上限は、最後の改行を含む12,000文字であり、バイト数やモデルのトークン数ではない。JSONを途中で切らず、レコードを省略して上限に収める。対象・呼び出し元の本文を優先して残すため、画面の周辺図と件数が一致するとは限らない。 複数宣言は既定8件、--max-targetsで1〜20件を指定できる。大きな差分はファイルごとに対象を分散し、本文・関連テスト・変更位置を残す。本文を全対象へ付けられない場合は省略を記録する。
 
 | フィールド | 判断する内容 |
 | --- | --- |
+| `summary` | 実際の取得数、方向・深さ・関係、省略理由の短い要約。`character_budget`は文字予算、`record_caps`は項目数、`depth_limit`/`neighborhood_limits`は探索条件。`follow_up`のfile/lineと方向を一つずつ指定して絞り、nullの関係は既定のcontains除外を表す |
 | `focus`・`nodes`・`edges` | 調査対象と接続。`ref`はこの出力内の参照、`id`は追加調査で使える元のID。接続に解決状態・呼び出し位置・根拠を残す |
 | `sources` | ソースのSHA-256と開始行付き本文。既定24行、長い宣言は先頭と末尾または指定行・呼び出し位置付近を抜粋。行・文字の省略を明示 |
 | `possible_callers` | 未解決辺に記録された候補、または呼び出し先名が一致した候補。解決済みの辺へ変換しない。同名の別の型である可能性がある |
@@ -30,7 +46,7 @@ uv run connection-map investigate --root C:\path\to\repository --changed --base 
 
 調査は次の順で進める。
 
-1. `freshness`、`coverage`、`truncation`を確認する。
+1. `summary`を読み、`freshness`、`coverage`、`truncation`で根拠を確認する。文字数制限がなくても、探索の深さ・件数や本文の抜粋による省略は残り得る。
 2. 本文と呼び出し位置・宣言根拠を読み、解決済みの辺と候補を区別する。
 3. 省略された内容や候補は、その`id`またはファイルと行を入口に追加の`investigate`で確認する。必要なら`--direction in`、`--relation calls`、予算を増やした出力を使う。
 4. 関連テストの本文とプロジェクトの実行手順を確認してから修正・検証する。
@@ -49,6 +65,14 @@ python_source_roots = ["src"]
 ```
 
 Pythonのimportルートはリポジトリ相対パスに限る。複数ルートに同名モジュールがある場合は任意の片方へ結ばず、部分的な解析として制約を記録する。自動認識は上記のsetuptools設定に限り、Poetry/Hatchなどは必要に応じて`context.python_source_roots`を指定する。参照した`pyproject.toml`も鮮度照合に含む。
+
+## C/C++の部分解析とfriend宣言
+
+C/C++の構文診断は、パーサーのERRORと欠落トークンの範囲、構文種類、近くの本文を示す。診断を件数で省略した場合も総数と省略を残す。ERROR自身が広い範囲を持つ場合は、その回復範囲を表示する。解析できた宣言の種類も確認し、parse_errorをコンパイラーのエラーと同一視しない。
+
+`.inl`と`.ipp`は単体のC++断片として読む。include元の囲むscopeやmacro展開は補わず、構文診断へその制約を記録する。構文エラーが残ればcoverageはpartialのままで、`--fail-on-error`は終了コード3を返す。
+
+friend自由関数の所属は宣言を置いたclassではなくnamespace側である。別classのmemberをfriendにする宣言は、その確認できたmemberの所属を保つ。friendであることと付与したclassを記録し、friendだけで導入された名前を通常の名前検索で見える関数にしない。ADL、type aliasを介したmemberの所属、未確定の修飾先は制約として扱う。[C++のfriend規定](https://eel.is/c++draft/class.friend)を参照。
 
 ## 改善の順序
 

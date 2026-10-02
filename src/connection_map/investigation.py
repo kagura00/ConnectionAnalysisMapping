@@ -273,10 +273,72 @@ def _tests(query: GraphQuery, targets: list[str], edges: list[dict], candidates:
     return sorted(records.values(), key=lambda r: (r["status"] != "resolved", r["file"], r["line"] or 0))
 
 
+def _packet_summary(packet: dict, initial_truncation: dict) -> dict:
+    """Describe each omission stage without claiming an exhaustive graph."""
+    numeric = {
+        key: value
+        for key, value in initial_truncation.items()
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0
+    }
+    removed = {
+        key: value - initial_truncation.get(key, 0)
+        for key, value in packet["truncation"].items()
+        if isinstance(value, int) and not isinstance(value, bool) and value > initial_truncation.get(key, 0)
+    }
+    omissions: dict[str, Any] = {}
+    if numeric:
+        omissions["record_caps"] = numeric
+    if removed:
+        omissions["character_budget"] = removed
+    if packet["truncation"]["depth_limited"]:
+        omissions["depth_limit"] = True
+    if packet["truncation"]["neighborhood_limited"]:
+        omissions["neighborhood_limits"] = True
+    if packet["truncation"]["neighborhood_diagnostics"] or packet["truncation"]["neighborhood_annotations"]:
+        omissions["neighborhood_record_caps"] = True
+    if packet["truncation"].get("coverage_lists"):
+        omissions["coverage_list_caps"] = True
+    if any(s.get("truncated") or any(r.get("text_truncated") for r in s.get("ranges", []))
+           for s in packet["sources"]):
+        omissions["excerpt_limits"] = True
+    if any(s.get("unavailable") for s in packet["sources"]):
+        omissions["source_unavailable"] = True
+    focus = next(n for n in packet["nodes"] if n["ref"] == packet["focus"][0])
+    query = packet["query"]
+    follow_up = {}
+    if focus.get("file") and focus.get("line"):
+        directions = ["in", "out"] if query["direction"] == "both" else [query["direction"]]
+        relations = query["relations"]
+        if relations is None and focus["kind"] in CALLABLE_KINDS:
+            relations = ["calls"]
+        follow_up = {
+            "file": focus["file"],
+            "line": focus["line"],
+            "directions": directions,
+            "relations": relations,
+            "depth": 1,
+        }
+    return {
+        "scope": {key: query[key] for key in ("direction", "depth", "relations", "resolution")},
+        "returned": {
+            "nodes": len(packet["nodes"]),
+            "edges": len(packet["edges"]),
+            "source_excerpts": sum(bool(s.get("ranges")) for s in packet["sources"]),
+            "related_tests": len(packet["related_tests"]),
+            "diagnostics": len(packet["diagnostics"]),
+        },
+        "omissions": omissions,
+        "follow_up": follow_up,
+    }
+
+
 def _fit(packet: dict, max_chars: int) -> None:
     """Remove complete records; never cut serialized JSON or conceal omissions."""
 
+    initial_truncation = dict(packet["truncation"])
+
     def size() -> int:
+        packet["summary"] = _packet_summary(packet, initial_truncation)
         used = len(encode_packet(packet))
         while packet["budget"]["used_chars"] != used:
             packet["budget"]["used_chars"] = used
@@ -450,6 +512,7 @@ def build_investigation(
         "format": "connection-analysis-investigation",
         "schema_version": "1.0",
         "analysis_sha256": query.sha256,
+        "summary": {},
         "selection": selection or {"kind": "node", "value": all_targets},
         "focus": [refs[t] for t in targets],
         "query": contexts[0]["query"],

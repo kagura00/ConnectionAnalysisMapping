@@ -301,6 +301,26 @@ def walk_tree(node: Any) -> Iterable[Any]:
         yield from walk_tree(child)
 
 
+def friend_declaration_for(node: Any) -> Any | None:
+    """Return the friend declaration directly containing a callable declarator.
+
+    Template wrappers can sit between the declaration and its friend node, but
+    a nested function, lambda, or class starts a separate lexical context.
+    """
+
+    current = node.parent
+    while current is not None:
+        if current.type == "friend_declaration":
+            return current
+        if current.type in {
+            "translation_unit", "namespace_definition", "class_specifier", "struct_specifier",
+            "union_specifier", "function_definition", "lambda_expression",
+        }:
+            return None
+        current = current.parent
+    return None
+
+
 def span_sort_key(span: dict[str, int] | None) -> tuple[int, int]:
     return ((span or {}).get("start_line", 0), (span or {}).get("start_col", 0))
 
