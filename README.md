@@ -2,6 +2,8 @@
 
 Connection Analysis Mappingは、リポジトリ内の関数・クラス・モジュールの関係を解析し、ローカルのWeb画面で探索するためのツールです。
 
+現在のソース版は**0.1.2**です。`connection-map --version`で使用中の版を確認できます。
+
 ## 最初に行うこと
 
 GitHub Releaseのportable zipを使用してください。

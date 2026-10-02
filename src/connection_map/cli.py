@@ -11,6 +11,7 @@ import uuid
 from collections.abc import Sequence
 from pathlib import Path
 
+from . import __version__
 from .analyzer import analyze_repository
 from .bundle import (
     BundleError,
@@ -46,6 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="connection-map",
         description="Analyze repository relationships and emit a Contract v1 graph.",
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
 
     analyze = commands.add_parser("analyze", help="analyze a repository with the configured language analyzer")

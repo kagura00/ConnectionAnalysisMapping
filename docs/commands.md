@@ -1,5 +1,7 @@
 # コマンドリファレンス
 
+`connection-map --version`で使用中のツールのバージョンを表示する。サブコマンドの指定は不要。
+
 ## 呼び出し方
 
 portable版は、portableフォルダーをカレントディレクトリにしてlauncherを実行する。
